@@ -1,0 +1,29 @@
+name: Conan Install
+description: >
+  Installs Conan, detects the default profile, and runs conan install for
+  the requested build type. Deduplicates the conan setup sequence that was
+  previously copy-pasted across multiple CI workflows.
+
+inputs:
+  build-type:
+    description: 'Conan build type (Debug or Release)'
+    required: true
+    default: Release
+
+runs:
+  using: composite
+  steps:
+    - name: Install Conan
+      shell: bash
+      run: pip install conan
+
+    - name: Detect Conan profile
+      shell: bash
+      run: conan profile detect --force
+
+    - name: Install Conan dependencies
+      shell: bash
+      run: |
+        conan install . --build=missing \
+          -s build_type="${{ inputs.build-type }}" \
+          --output-folder "build/$(echo '${{ inputs.build-type }}' | tr '[:upper:]' '[:lower:]')"

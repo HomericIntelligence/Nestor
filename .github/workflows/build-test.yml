@@ -25,15 +25,10 @@ jobs:
           if [ "${{ matrix.compiler }}" = "clang" ]; then
             sudo apt-get install -y clang
           fi
-          pip install conan
-          conan profile detect --force
-      - name: Install Conan dependencies
-        env:
-          BUILD_TYPE: ${{ matrix.build_type }}
-        run: |
-          BUILD_TYPE_CAP=$(echo "$BUILD_TYPE" | sed 's/./\u&/')
-          conan install . --build=missing -s build_type="$BUILD_TYPE_CAP" \
-            --output-folder "build/$BUILD_TYPE"
+      - name: Conan install
+        uses: ./.github/actions/conan-install
+        with:
+          build-type: ${{ matrix.build_type == 'debug' && 'Debug' || 'Release' }}
       - name: Configure
         env:
           COMPILER: ${{ matrix.compiler }}
