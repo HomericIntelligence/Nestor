@@ -23,14 +23,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies
-        run: |
-          sudo apt-get install -y ninja-build clang clang-tidy
-          pip install conan
-          conan profile detect --force
-      - name: Install Conan dependencies
-        run: |
-          conan install . --build=missing -s build_type=Debug \
-            --output-folder build/debug
+        run: sudo apt-get install -y ninja-build clang clang-tidy
+      - name: Conan install (Debug)
+        uses: ./.github/actions/conan-install
+        with:
+          build-type: Debug
       - name: Configure
         run: cmake --preset debug -DProjectNestor_ENABLE_CLANG_TIDY=ON
       - name: Build

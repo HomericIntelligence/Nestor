@@ -28,12 +28,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build clang clang-tidy
-          pip install conan
-          conan profile detect --force
-      - name: Install Conan dependencies
-        run: |
-          conan install . --build=missing -s build_type=Debug \
-            --output-folder build/debug
+      - name: Conan install (Debug)
+        uses: ./.github/actions/conan-install
+        with:
+          build-type: Debug
       - name: Configure with clang-tidy
         run: cmake --preset debug -DProjectNestor_ENABLE_CLANG_TIDY=ON
       - name: clang-tidy check
@@ -53,12 +51,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build
-          pip install conan
-          conan profile detect --force
-      - name: Install Conan dependencies
-        run: |
-          conan install . --build=missing -s build_type=Release \
-            --output-folder build/release
+      - name: Conan install (Release)
+        uses: ./.github/actions/conan-install
+        with:
+          build-type: Release
       - name: Configure
         run: cmake --preset release
       - name: Build
@@ -81,12 +77,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build
-          pip install conan
-          conan profile detect --force
-      - name: Install Conan dependencies
-        run: |
-          conan install . --build=missing -s build_type=Release \
-            --output-folder build/release
+      - name: Conan install (Release)
+        uses: ./.github/actions/conan-install
+        with:
+          build-type: Release
       - name: Configure
         run: cmake --preset release
       - name: Build
@@ -165,12 +159,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build
-          pip install conan
-          conan profile detect --force
-      - name: Install Conan dependencies
-        run: |
-          conan install . --build=missing -s build_type=Release \
-            --output-folder build/release
+      - name: Conan install (Release)
+        uses: ./.github/actions/conan-install
+        with:
+          build-type: Release
       - name: Configure with CMake
         run: cmake --preset release
       - name: Build
