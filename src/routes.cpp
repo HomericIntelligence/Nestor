@@ -15,6 +15,11 @@ void register_routes(httplib::Server& server, Store& store, NatsClient& nats) {
   Store* sp = &store;
   NatsClient* np = &nats;
 
+  // Helper: extract topic field, falling back from "idea" to "topic".
+  auto extract_topic = [](const json& j) -> std::string {
+    return j.value("idea", j.value("topic", ""));
+  };
+
   // ── Health ────────────────────────────────────────────────────────────────
 
   server.Get("/v1/health", [](const httplib::Request& /*req*/, httplib::Response& res) {
@@ -37,7 +42,7 @@ void register_routes(httplib::Server& server, Store& store, NatsClient& nats) {
 
     const json result = sp->submit_research(body);
     const std::string id = result["id"].get<std::string>();
-    const std::string topic = body.value("idea", body.value("topic", ""));
+    const std::string topic = extract_topic(body);
 
     // Publish to hi.research.<id> — graceful degradation if NATS unavailable.
     const std::string subject = "hi.research." + id;
@@ -68,7 +73,7 @@ void register_routes(httplib::Server& server, Store& store, NatsClient& nats) {
                   return;
                 }
 
-                const std::string topic = updated.value("idea", updated.value("topic", ""));
+                const std::string topic = extract_topic(updated);
 
                 // Structured log: hi.logs.nestor.research_completed (ADR-005).
                 np->publish_log("hi.logs.nestor.research_completed", "info",
