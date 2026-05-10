@@ -10,9 +10,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl-dev \
     python3 \
     python3-pip \
+    python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip3 install --break-system-packages conan && conan profile detect
+# Install Conan inside an isolated venv to avoid PEP 668 / system-package
+# conflicts (no --break-system-packages). Symlink the entrypoint onto PATH.
+RUN python3 -m venv /opt/conan-venv \
+    && /opt/conan-venv/bin/pip install --no-cache-dir conan \
+    && ln -s /opt/conan-venv/bin/conan /usr/local/bin/conan \
+    && conan profile detect
 
 WORKDIR /src
 
