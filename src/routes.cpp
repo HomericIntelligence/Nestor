@@ -32,7 +32,7 @@ void register_routes(httplib::Server& server, Store& store, NatsClient& nats) {
     res.set_content(sp->get_stats().dump(), "application/json");
   });
 
-  server.Post("/v1/research", [sp, np](const httplib::Request& req, httplib::Response& res) {
+  server.Post("/v1/research", [sp, np, extract_topic](const httplib::Request& req, httplib::Response& res) {
     const auto body = json::parse(req.body, nullptr, false);
     if (body.is_discarded()) {
       res.status = 400;
@@ -63,7 +63,7 @@ void register_routes(httplib::Server& server, Store& store, NatsClient& nats) {
   // ── Complete Research ─────────────────────────────────────────────────────
 
   server.Post("/v1/research/:id/complete",
-              [sp, np](const httplib::Request& req, httplib::Response& res) {
+              [sp, np, extract_topic](const httplib::Request& req, httplib::Response& res) {
                 const std::string id = req.path_params.at("id");
                 const json updated = sp->complete_research(id);
 
