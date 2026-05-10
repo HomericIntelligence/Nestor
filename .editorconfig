@@ -1,0 +1,45 @@
+# EditorConfig — https://editorconfig.org
+# Top-level config; do not search above this directory.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# C/C++ sources — match .clang-format (4-space indent already default above)
+[*.{c,h,cc,cpp,hh,hpp,cxx,hxx,inl}]
+indent_style = space
+indent_size = 4
+
+# CMake
+[{CMakeLists.txt,*.cmake}]
+indent_style = space
+indent_size = 2
+
+# YAML / JSON
+[*.{yml,yaml,json}]
+indent_style = space
+indent_size = 2
+
+# Markdown — preserve trailing whitespace (used for hard line breaks)
+[*.md]
+trim_trailing_whitespace = false
+indent_size = 2
+
+# Makefiles require tabs
+[{Makefile,makefile,*.mk}]
+indent_style = tab
+
+# Shell scripts
+[*.sh]
+indent_style = space
+indent_size = 2
+
+# justfile
+[{justfile,Justfile}]
+indent_style = space
+indent_size = 2

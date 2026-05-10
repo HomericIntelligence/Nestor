@@ -26,7 +26,7 @@ format:
 format-check:
   ./scripts/format.sh --check
 
-coverage:
+coverage: deps
   cmake --preset coverage && cmake --build --preset coverage && ./scripts/coverage.sh
 
 clean:
