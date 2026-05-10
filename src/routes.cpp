@@ -32,33 +32,34 @@ void register_routes(httplib::Server& server, Store& store, NatsClient& nats) {
     res.set_content(sp->get_stats().dump(), "application/json");
   });
 
-  server.Post("/v1/research", [sp, np, extract_topic](const httplib::Request& req, httplib::Response& res) {
-    const auto body = json::parse(req.body, nullptr, false);
-    if (body.is_discarded()) {
-      res.status = 400;
-      res.set_content(json{{"detail", "Invalid JSON"}}.dump(), "application/json");
-      return;
-    }
+  server.Post("/v1/research",
+              [sp, np, extract_topic](const httplib::Request& req, httplib::Response& res) {
+                const auto body = json::parse(req.body, nullptr, false);
+                if (body.is_discarded()) {
+                  res.status = 400;
+                  res.set_content(json{{"detail", "Invalid JSON"}}.dump(), "application/json");
+                  return;
+                }
 
-    const json result = sp->submit_research(body);
-    const std::string id = result["id"].get<std::string>();
-    const std::string topic = extract_topic(body);
+                const json result = sp->submit_research(body);
+                const std::string id = result["id"].get<std::string>();
+                const std::string topic = extract_topic(body);
 
-    // Publish to hi.research.<id> — graceful degradation if NATS unavailable.
-    const std::string subject = "hi.research." + id;
-    json payload = body;
-    payload["id"] = id;
-    payload["status"] = "pending";
-    np->publish(subject, payload.dump());
+                // Publish to hi.research.<id> — graceful degradation if NATS unavailable.
+                const std::string subject = "hi.research." + id;
+                json payload = body;
+                payload["id"] = id;
+                payload["status"] = "pending";
+                np->publish(subject, payload.dump());
 
-    // Structured log: hi.logs.nestor.research_submitted (ADR-005).
-    np->publish_log("hi.logs.nestor.research_submitted", "info",
-                    "Research submitted: topic=" + topic,
-                    json{{"research_id", id}, {"topic", topic}});
+                // Structured log: hi.logs.nestor.research_submitted (ADR-005).
+                np->publish_log("hi.logs.nestor.research_submitted", "info",
+                                "Research submitted: topic=" + topic,
+                                json{{"research_id", id}, {"topic", topic}});
 
-    res.status = 202;
-    res.set_content(result.dump(), "application/json");
-  });
+                res.status = 202;
+                res.set_content(result.dump(), "application/json");
+              });
 
   // ── Complete Research ─────────────────────────────────────────────────────
 
