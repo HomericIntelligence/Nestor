@@ -93,7 +93,14 @@ jobs:
           else
             mapfile -t cpp_files < <(find src -name "*.cpp" | head -5)
             if [ "${#cpp_files[@]}" -gt 0 ]; then
-              clang-tidy -p build/debug "${cpp_files[@]}"
+              # build/debug/compile_commands.json comes from the GCC build and
+              # contains GCC-only warning flags (-Wduplicated-branches,
+              # -Wduplicated-cond, -Wlogical-op, -Wuseless-cast). Tell clang to
+              # treat unknown warning options as warnings, not as
+              # clang-diagnostic-unknown-warning-option errors.
+              clang-tidy -p build/debug \
+                --extra-arg-before=-Wno-unknown-warning-option \
+                "${cpp_files[@]}"
             else
               echo "::notice::no src/*.cpp files found to clang-tidy"
             fi
