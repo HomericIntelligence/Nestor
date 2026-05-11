@@ -11,6 +11,57 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  forbid-suppressions:
+    name: forbid-suppressions
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "Reject silent-failure workaround in shell/YAML/Dockerfile/justfile/HCL"
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(git ls-files \
+            -- \
+            '*.sh' '*.bash' '*.yml' '*.yaml' '*.hcl' \
+            'Dockerfile*' '**/Dockerfile*' \
+            'justfile' '**/justfile' 'Justfile' '**/Justfile')
+          declare -a scan_files=()
+          for f in "${files[@]}"; do
+            case "$f" in
+              # Exempt this workflow file (heredoc would otherwise self-match)
+              .github/workflows/_required.yml) continue ;;
+              # Exempt any runbook that documents the rule (if present)
+              docs/runbooks/no-silent-failures.md) continue ;;
+            esac
+            scan_files+=("$f")
+          done
+          if [ "${#scan_files[@]}" -eq 0 ]; then
+            echo "No files to scan"
+            exit 0
+          fi
+          if grep -nE '\|\|[[:space:]]*true([[:space:]]*$|[[:space:]]+#)' "${scan_files[@]}"; then
+            echo ""
+            echo '::error::Found silent-failure workarounds above. Refactor per HomericIntelligence/Odysseus#280.'
+            exit 1
+          fi
+          echo 'OK: no silent-failure workarounds found'
+
+      - name: "Reject continue-on-error workflow opt-out"
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(git ls-files -- '.github/workflows/*.yml' '.github/workflows/*.yaml')
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No workflow files"
+            exit 0
+          fi
+          if grep -nE '^[[:space:]]*continue-on-error:[[:space:]]*true[[:space:]]*$' "${files[@]}"; then
+            echo ""
+            echo '::error::Found "continue-on-error: true" above. Fix the root cause per HomericIntelligence/Odysseus#280.'
+            exit 1
+          fi
+          echo 'OK: no "continue-on-error: true" found'
+
   lint:
     name: lint
     runs-on: ubuntu-24.04
@@ -36,10 +87,23 @@ jobs:
         run: cmake --preset debug -DProjectNestor_ENABLE_CLANG_TIDY=ON
       - name: clang-tidy check
         run: |
+          set -euo pipefail
           if pixi run clang-tidy 2>/dev/null; then
             echo "pixi clang-tidy passed"
           else
-            find src -name "*.cpp" | head -5 | xargs clang-tidy -- || true
+            mapfile -t cpp_files < <(find src -name "*.cpp" | head -5)
+            if [ "${#cpp_files[@]}" -gt 0 ]; then
+              # build/debug/compile_commands.json comes from the GCC build and
+              # contains GCC-only warning flags (-Wduplicated-branches,
+              # -Wduplicated-cond, -Wlogical-op, -Wuseless-cast). Tell clang to
+              # treat unknown warning options as warnings, not as
+              # clang-diagnostic-unknown-warning-option errors.
+              clang-tidy -p build/debug \
+                --extra-arg-before=-Wno-unknown-warning-option \
+                "${cpp_files[@]}"
+            else
+              echo "::notice::no src/*.cpp files found to clang-tidy"
+            fi
           fi
 
   unit-tests:
@@ -133,6 +197,7 @@ jobs:
 
       - name: Run Gitleaks
         run: |
+          set -euo pipefail
           if [ -f .gitleaks.toml ]; then
             gitleaks detect --source . --config .gitleaks.toml \
               --report-format sarif --report-path gitleaks.sarif --exit-code 0
@@ -140,7 +205,6 @@ jobs:
             gitleaks detect --source . \
               --report-format sarif --report-path gitleaks.sarif --exit-code 0
           fi
-        continue-on-error: true
 
       - name: Upload Gitleaks SARIF
         if: always() && hashFiles('gitleaks.sarif') != ''
@@ -175,12 +239,21 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate workflow schemas
         run: |
+          set -euo pipefail
           pip install check-jsonschema
-          find .github/workflows -name "*.yml" | \
-            xargs check-jsonschema \
-              --schemafile https://json.schemastore.org/github-workflow || \
-            echo "::warning::Schema validation failed (schemastore.org may be unavailable)"
-        continue-on-error: true
+          schema_url='https://json.schemastore.org/github-workflow'
+          # Probe schemastore once; emit a warning and skip validation only when
+          # the schema is genuinely unreachable. Any other failure must surface.
+          if ! curl -fsSL --max-time 15 -o /tmp/github-workflow.schema.json "$schema_url"; then
+            echo "::warning::schemastore.org unreachable; skipping workflow schema validation"
+            exit 0
+          fi
+          mapfile -t wf_files < <(find .github/workflows -name "*.yml")
+          if [ "${#wf_files[@]}" -eq 0 ]; then
+            echo "No workflow files to validate"
+            exit 0
+          fi
+          check-jsonschema --schemafile /tmp/github-workflow.schema.json "${wf_files[@]}"
 
   deps-version-sync:
     name: deps/version-sync
