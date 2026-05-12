@@ -125,9 +125,11 @@ void NatsClient::publish_log(const std::string& subject, const std::string& leve
   const std::string payload_str = payload.dump();
 
   // Use core NATS publish (non-JetStream) for fire-and-forget log delivery.
-  natsConnection_PublishString(reinterpret_cast<natsConnection*>(conn_), subject.c_str(),
-                               payload_str.c_str());
   // Return value intentionally ignored — log publish failures are non-fatal.
+  // The explicit (void) cast satisfies static analysers (cert-err33-c,
+  // bugprone-unused-return-value) and documents the intent at the call site.
+  (void)natsConnection_PublishString(reinterpret_cast<natsConnection*>(conn_), subject.c_str(),
+                                     payload_str.c_str());
 }
 
 }  // namespace projectnestor
