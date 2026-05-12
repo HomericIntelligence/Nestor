@@ -9,7 +9,7 @@
 namespace projectnestor::test {
 
 TEST(GenerateUuidTest, ReturnsValidV4Format) {
-  const std::string uuid = generate_uuid();
+  const std::string uuid = detail::generate_uuid();
   const std::regex pattern(
       "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-"
       "[0-9a-f]{12}$");
@@ -19,19 +19,19 @@ TEST(GenerateUuidTest, ReturnsValidV4Format) {
 TEST(GenerateUuidTest, GeneratesUniqueValues) {
   std::set<std::string> ids;
   for (int i = 0; i < 100; ++i) {
-    ids.insert(generate_uuid());
+    ids.insert(detail::generate_uuid());
   }
   EXPECT_EQ(ids.size(), 100u);
 }
 
 TEST(NowIso8601Test, ReturnsValidTimestamp) {
-  const std::string ts = now_iso8601();
+  const std::string ts = detail::now_iso8601();
   const std::regex pattern(R"(^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$)");
   EXPECT_TRUE(std::regex_match(ts, pattern)) << "ts=" << ts;
 }
 
 TEST(NowIso8601Test, ReturnsCurrentYear) {
-  const std::string ts = now_iso8601();
+  const std::string ts = detail::now_iso8601();
   const std::string year = ts.substr(0, 4);
   EXPECT_TRUE(year == "2025" || year == "2026" || year == "2027") << "year=" << year;
 }

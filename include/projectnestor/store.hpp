@@ -9,8 +9,12 @@
 namespace projectnestor {
 using json = nlohmann::json;
 
+namespace detail {
+// Internal helpers — exposed for unit tests only. Not part of the public API
+// and may change without notice. Do NOT call from downstream code.
 std::string generate_uuid();
 std::string now_iso8601();
+}  // namespace detail
 
 class Store {
  public:
