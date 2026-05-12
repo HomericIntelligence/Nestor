@@ -34,6 +34,16 @@ void register_routes(httplib::Server& server, Store& store, NatsClient& nats) {
 
   server.Post("/v1/research",
               [sp, np, extract_topic](const httplib::Request& req, httplib::Response& res) {
+                // Reject anything that doesn't declare a JSON content-type.
+                // Per RFC 9110 §8.3 the media-type may carry parameters
+                // (e.g. "; charset=utf-8"), so match by substring not equality.
+                const std::string ct = req.get_header_value("Content-Type");
+                if (ct.find("application/json") == std::string::npos) {
+                  res.status = 415;
+                  res.set_content(json{{"detail", "Content-Type must be application/json"}}.dump(),
+                                  "application/json");
+                  return;
+                }
                 const auto body = json::parse(req.body, nullptr, false);
                 if (body.is_discarded()) {
                   res.status = 400;
