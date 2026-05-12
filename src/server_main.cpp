@@ -7,6 +7,7 @@
 
 #include <csignal>
 #include <cstdlib>
+#include <exception>
 #include <iostream>
 #include <string>
 
@@ -26,8 +27,18 @@ void signal_handler(int /*signal*/) {
 int main() {
   const std::string host = "0.0.0.0";
   const int port = []() -> int {
+    constexpr int kDefaultPort = 8081;
     const char* env = std::getenv("NESTOR_PORT");
-    return env != nullptr ? std::stoi(env) : 8081;
+    if (env == nullptr) {
+      return kDefaultPort;
+    }
+    try {
+      return std::stoi(env);
+    } catch (const std::exception& e) {
+      std::cerr << "[main] Invalid NESTOR_PORT=\"" << env << "\" (" << e.what()
+                << "); falling back to " << kDefaultPort << ".\n";
+      return kDefaultPort;
+    }
   }();
 
   const std::string nats_url = []() -> std::string {
