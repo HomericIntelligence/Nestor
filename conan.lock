@@ -1,0 +1,11 @@
+{
+    "version": "0.5",
+    "requires": [
+        "nlohmann_json/3.11.3#45828be26eb619a2e04ca517bb7b828d%1701220705.259",
+        "gtest/1.14.0#f8f0757a574a8dd747d16af62d6eb1b7%1743410807.169",
+        "cpp-httplib/0.18.3#ad62795f35f0fecaea1fd4bdb7b949f0%1748426309.372"
+    ],
+    "build_requires": [],
+    "python_requires": [],
+    "config_requires": []
+}
