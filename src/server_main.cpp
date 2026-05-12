@@ -10,6 +10,7 @@
 #include <exception>
 #include <iostream>
 #include <string>
+#include <unistd.h>
 
 #include "httplib.h"
 
@@ -17,7 +18,12 @@ namespace {
 httplib::Server* g_server = nullptr;
 
 void signal_handler(int /*signal*/) {
-  std::cout << "\nShutting down ProjectNestor...\n";
+  // Async-signal-safe: write(2) is on the POSIX list; std::cout is NOT.
+  // POSIX.1-2024 §2.4.3 — calling non-async-signal-safe functions from a
+  // signal handler is undefined behaviour.
+  static constexpr char kMsg[] = "\nShutting down ProjectNestor...\n";
+  // Best-effort write; ignore EINTR/short-write — we're tearing down anyway.
+  (void)::write(STDERR_FILENO, kMsg, sizeof(kMsg) - 1);
   if (g_server != nullptr) {
     g_server->stop();
   }
