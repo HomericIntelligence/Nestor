@@ -9,8 +9,12 @@
 namespace projectnestor {
 using json = nlohmann::json;
 
+namespace detail {
+// Internal helpers — exposed for unit tests only. Not part of the public API
+// and may change without notice. Do NOT call from downstream code.
 std::string generate_uuid();
 std::string now_iso8601();
+}  // namespace detail
 
 class Store {
  public:
@@ -23,7 +27,10 @@ class Store {
 
  private:
   mutable std::mutex mutex_;
-  std::atomic<int> active_{0};
+  // No "active" counter: the current API has only `submit_research` (→ pending)
+  // and `complete_research` (→ completed) transitions, no claim/start step.
+  // A permanently-zero `active` field misled operators reading /v1/research/stats.
+  // Re-add it once a real "in-progress" state transition exists.
   std::atomic<int> completed_{0};
   std::atomic<int> pending_{0};
   std::unordered_map<std::string, json> research_items_;

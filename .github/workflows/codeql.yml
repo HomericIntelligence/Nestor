@@ -1,0 +1,45 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly scan to catch newly-published rules even when no PRs land.
+    - cron: "23 5 * * 1"
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  analyze:
+    name: CodeQL (cpp)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+          pip install conan
+          conan profile detect --force
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: cpp
+          queries: security-and-quality
+      - name: Conan install
+        run: |
+          conan install . --build=missing -s build_type=Debug \
+            --output-folder build/debug
+      - name: Build
+        run: |
+          cmake --preset debug
+          cmake --build --preset debug
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:cpp"

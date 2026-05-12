@@ -30,9 +30,19 @@ jobs:
       - name: Generate coverage report
         run: ./scripts/coverage.sh
       - name: Check threshold
+        # gcovr has a first-class --fail-under-line flag; the previous
+        # grep + python pipeline broke whenever gcovr changed its summary
+        # wording or when the regex tripped over locale-formatted floats.
         run: |
-          LINE_COV=$(gcovr --root . --filter include --filter src --exclude src/server_main.cpp --exclude src/nats_client.cpp --print-summary build/coverage 2>/dev/null | grep "lines:" | grep -oP '\d+\.\d+' | head -1)
-          python3 -c "import sys; cov=float('${LINE_COV}'); sys.exit(0 if cov >= 80 else 1)"
+          set -euo pipefail
+          gcovr \
+            --root . \
+            --filter include \
+            --filter src \
+            --exclude src/server_main.cpp \
+            --exclude src/nats_client.cpp \
+            --fail-under-line 80 \
+            build/coverage
 
   check-all:
     name: All Coverage Checks

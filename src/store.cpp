@@ -10,6 +10,8 @@
 
 namespace projectnestor {
 
+namespace detail {
+
 std::string generate_uuid() {
   std::random_device rd;
   std::mt19937_64 gen(rd());
@@ -51,17 +53,21 @@ std::string now_iso8601() {
   return oss.str();
 }
 
+}  // namespace detail
+
 json Store::get_stats() const {
+  // "active" is intentionally omitted: there is no claim/start state
+  // transition in the current API, so reporting it as a permanently-zero
+  // value misled operators. Add it back once submit→active→completed exists.
   return json{
-      {"active", active_.load()},
       {"completed", completed_.load()},
       {"pending", pending_.load()},
   };
 }
 
 json Store::submit_research(const json& body) {
-  const std::string id = generate_uuid();
-  const std::string submitted_at = now_iso8601();
+  const std::string id = detail::generate_uuid();
+  const std::string submitted_at = detail::now_iso8601();
 
   const std::string idea = body.value("idea", "");
   const std::string context = body.value("context", "");
@@ -88,7 +94,7 @@ json Store::complete_research(const std::string& id) {
   }
 
   it->second["status"] = "completed";
-  it->second["completed_at"] = now_iso8601();
+  it->second["completed_at"] = detail::now_iso8601();
   --pending_;
   ++completed_;
 

@@ -7,8 +7,10 @@
 
 #include <csignal>
 #include <cstdlib>
+#include <exception>
 #include <iostream>
 #include <string>
+#include <unistd.h>
 
 #include "httplib.h"
 
@@ -16,7 +18,12 @@ namespace {
 httplib::Server* g_server = nullptr;
 
 void signal_handler(int /*signal*/) {
-  std::cout << "\nShutting down ProjectNestor...\n";
+  // Async-signal-safe: write(2) is on the POSIX list; std::cout is NOT.
+  // POSIX.1-2024 §2.4.3 — calling non-async-signal-safe functions from a
+  // signal handler is undefined behaviour.
+  static constexpr char kMsg[] = "\nShutting down ProjectNestor...\n";
+  // Best-effort write; ignore EINTR/short-write — we're tearing down anyway.
+  (void)::write(STDERR_FILENO, kMsg, sizeof(kMsg) - 1);
   if (g_server != nullptr) {
     g_server->stop();
   }
@@ -26,8 +33,18 @@ void signal_handler(int /*signal*/) {
 int main() {
   const std::string host = "0.0.0.0";
   const int port = []() -> int {
+    constexpr int kDefaultPort = 8081;
     const char* env = std::getenv("NESTOR_PORT");
-    return env != nullptr ? std::stoi(env) : 8081;
+    if (env == nullptr) {
+      return kDefaultPort;
+    }
+    try {
+      return std::stoi(env);
+    } catch (const std::exception& e) {
+      std::cerr << "[main] Invalid NESTOR_PORT=\"" << env << "\" (" << e.what()
+                << "); falling back to " << kDefaultPort << ".\n";
+      return kDefaultPort;
+    }
   }();
 
   const std::string nats_url = []() -> std::string {

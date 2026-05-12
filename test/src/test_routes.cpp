@@ -53,7 +53,7 @@ TEST_F(RoutesTest, StatsEndpointReturnsZeros) {
   ASSERT_TRUE(res);
   EXPECT_EQ(res->status, 200);
   const auto body = json::parse(res->body);
-  EXPECT_EQ(body["active"], 0);
+  EXPECT_FALSE(body.contains("active"));
   EXPECT_EQ(body["completed"], 0);
   EXPECT_EQ(body["pending"], 0);
 }
