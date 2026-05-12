@@ -52,8 +52,10 @@ std::string now_iso8601() {
 }
 
 json Store::get_stats() const {
+  // "active" is intentionally omitted: there is no claim/start state
+  // transition in the current API, so reporting it as a permanently-zero
+  // value misled operators. Add it back once submit→active→completed exists.
   return json{
-      {"active", active_.load()},
       {"completed", completed_.load()},
       {"pending", pending_.load()},
   };

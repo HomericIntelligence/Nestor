@@ -39,7 +39,7 @@ TEST(NowIso8601Test, ReturnsCurrentYear) {
 TEST(StoreTest, InitialStatsAreZero) {
   Store store;
   const json stats = store.get_stats();
-  EXPECT_EQ(stats["active"], 0);
+  EXPECT_FALSE(stats.contains("active"));
   EXPECT_EQ(stats["completed"], 0);
   EXPECT_EQ(stats["pending"], 0);
 }
@@ -58,7 +58,7 @@ TEST(StoreTest, SubmitResearchIncrementsPending) {
   store.submit_research({{"idea", "a"}});
   const json stats = store.get_stats();
   EXPECT_EQ(stats["pending"], 1);
-  EXPECT_EQ(stats["active"], 0);
+  EXPECT_FALSE(stats.contains("active"));
   EXPECT_EQ(stats["completed"], 0);
 }
 
