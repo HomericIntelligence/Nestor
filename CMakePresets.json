@@ -53,6 +53,16 @@
       "cacheVariables": {
         "ProjectNestor_WARNINGS_AS_ERRORS": "ON"
       }
+    },
+    {
+      "name": "docs",
+      "displayName": "Docs (Doxygen)",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ProjectNestor_BUILD_TESTING": "OFF",
+        "ProjectNestor_ENABLE_DOXYGEN": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -71,6 +81,11 @@
     {
       "name": "ci",
       "configurePreset": "ci"
+    },
+    {
+      "name": "docs",
+      "configurePreset": "docs",
+      "targets": ["doxygen"]
     }
   ],
   "testPresets": [

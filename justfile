@@ -34,3 +34,7 @@ clean:
 
 ci:
   cmake --preset ci && cmake --build --preset ci && ctest --preset ci
+
+# Generate Doxygen API documentation under build/docs/
+docs: deps
+  cmake --preset docs && cmake --build --preset docs
