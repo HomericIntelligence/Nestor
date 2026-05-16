@@ -96,11 +96,21 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - name: Install clang-format
+        # Ensure clang-format is present so the check below cannot silently
+        # bypass enforcement when the tool is missing — see #32.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format
       - name: clang-format check
         run: |
-          find src include -name "*.cpp" -o -name "*.hpp" | \
-            xargs clang-format --dry-run --Werror 2>/dev/null || \
-            echo "::notice::clang-format not available; running yamllint on configs"
+          set -euo pipefail
+          mapfile -t files < <(find src include -type f \( -name "*.cpp" -o -name "*.hpp" \))
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No C++ sources to format-check"
+            exit 0
+          fi
+          clang-format --dry-run --Werror "${files[@]}"
       - name: yamllint
         run: pip install yamllint && yamllint -d relaxed .github/
 
