@@ -19,4 +19,18 @@ target_link_libraries(${PROJECT_NAME}_tests
     GTest::gtest_main)
 
 include(GoogleTest)
-gtest_discover_tests(${PROJECT_NAME}_tests)
+# Label tests so the unit/integration split in CI works (#30):
+#   - Tests in the "Routes" suite exercise the HTTP layer end-to-end and are
+#     labelled "integration".
+#   - All other tests are labelled "unit".
+# Two discovery passes are required because gtest_discover_tests applies one
+# LABELS property per call.
+gtest_discover_tests(${PROJECT_NAME}_tests
+  TEST_FILTER "-*Routes*"
+  PROPERTIES LABELS "unit"
+)
+gtest_discover_tests(${PROJECT_NAME}_tests
+  TEST_FILTER "*Routes*"
+  TEST_PREFIX "integration."
+  PROPERTIES LABELS "integration"
+)
