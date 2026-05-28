@@ -91,6 +91,17 @@ jobs:
           fi
           echo 'OK: no advisory annotations found'
 
+  branch-protection-drift:
+    name: branch-protection-drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify branch protection configuration
+        run: bash scripts/verify-branch-protection.sh
+
   lint:
     name: lint
     runs-on: ubuntu-24.04
