@@ -38,3 +38,19 @@ ci:
 # Generate Doxygen API documentation under build/docs/
 docs: deps
   cmake --preset docs && cmake --build --preset docs
+
+# Install Conan dependencies for AddressSanitizer
+deps-asan:
+  conan install . --output-folder=build/asan --profile=conan/profiles/debug --build=missing
+
+# Install Conan dependencies for ThreadSanitizer
+deps-tsan:
+  conan install . --output-folder=build/tsan --profile=conan/profiles/debug --build=missing
+
+# Build and test under AddressSanitizer + UBSan
+asan: deps-asan
+  cmake --preset asan && cmake --build --preset asan && ctest --preset asan
+
+# Build and test under ThreadSanitizer
+tsan: deps-tsan
+  cmake --preset tsan && cmake --build --preset tsan && ctest --preset tsan

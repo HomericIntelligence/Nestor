@@ -23,8 +23,7 @@
       "inherits": "base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "ProjectNestor_BUILD_TESTING": "ON",
-        "ProjectNestor_ENABLE_SANITIZERS": "ON"
+        "ProjectNestor_BUILD_TESTING": "ON"
       }
     },
     {
@@ -63,6 +62,24 @@
         "ProjectNestor_BUILD_TESTING": "OFF",
         "ProjectNestor_ENABLE_DOXYGEN": "ON"
       }
+    },
+    {
+      "name": "asan",
+      "displayName": "AddressSanitizer + UBSan",
+      "inherits": "debug",
+      "cacheVariables": {
+        "ProjectNestor_ENABLE_SANITIZERS": "ON",
+        "ProjectNestor_SANITIZER": "address;undefined"
+      }
+    },
+    {
+      "name": "tsan",
+      "displayName": "ThreadSanitizer",
+      "inherits": "debug",
+      "cacheVariables": {
+        "ProjectNestor_ENABLE_SANITIZERS": "ON",
+        "ProjectNestor_SANITIZER": "thread"
+      }
     }
   ],
   "buildPresets": [
@@ -86,6 +103,14 @@
       "name": "docs",
       "configurePreset": "docs",
       "targets": ["doxygen"]
+    },
+    {
+      "name": "asan",
+      "configurePreset": "asan"
+    },
+    {
+      "name": "tsan",
+      "configurePreset": "tsan"
     }
   ],
   "testPresets": [
@@ -115,6 +140,27 @@
       "configurePreset": "coverage",
       "output": {
         "outputOnFailure": true
+      }
+    },
+    {
+      "name": "asan",
+      "configurePreset": "asan",
+      "output": {
+        "outputOnFailure": true
+      },
+      "environment": {
+        "ASAN_OPTIONS": "halt_on_error=1:abort_on_error=1:print_stacktrace=1",
+        "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1"
+      }
+    },
+    {
+      "name": "tsan",
+      "configurePreset": "tsan",
+      "output": {
+        "outputOnFailure": true
+      },
+      "environment": {
+        "TSAN_OPTIONS": "halt_on_error=1:second_deadlock_stack=1"
       }
     }
   ]

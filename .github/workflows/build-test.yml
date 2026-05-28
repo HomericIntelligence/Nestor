@@ -16,6 +16,13 @@ jobs:
         os: [ubuntu-24.04]
         compiler: [gcc, clang]
         build_type: [debug, release]
+        include:
+          - os: ubuntu-24.04
+            compiler: clang
+            build_type: asan
+          - os: ubuntu-24.04
+            compiler: clang
+            build_type: tsan
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies
@@ -28,7 +35,8 @@ jobs:
       - name: Conan install
         uses: ./.github/actions/conan-install
         with:
-          build-type: ${{ matrix.build_type == 'debug' && 'Debug' || 'Release' }}
+          build-type: ${{ matrix.build_type == 'release' && 'Release' || 'Debug' }}
+          output-subdir: ${{ matrix.build_type }}
       - name: Configure
         env:
           COMPILER: ${{ matrix.compiler }}

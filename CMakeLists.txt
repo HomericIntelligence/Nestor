@@ -14,6 +14,7 @@ if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
 endif()
 
 include(cmake/StandardSettings.cmake)
+include(cmake/Sanitizers.cmake)
 include(cmake/CompilerWarnings.cmake)
 include(cmake/StaticAnalyzers.cmake)
 include(cmake/Doxygen.cmake)
@@ -21,6 +22,8 @@ include(cmake/SourcesAndHeaders.cmake)
 
 add_library(${PROJECT_NAME} ${headers} ${sources})
 add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
+
+enable_sanitizers(${PROJECT_NAME})
 
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_20)
 set_target_properties(${PROJECT_NAME} PROPERTIES CXX_EXTENSIONS OFF)
@@ -73,6 +76,8 @@ add_library(${PROJECT_NAME}_core STATIC
 )
 add_library(${PROJECT_NAME}::core ALIAS ${PROJECT_NAME}_core)
 
+enable_sanitizers(${PROJECT_NAME}_core)
+
 target_include_directories(${PROJECT_NAME}_core PUBLIC
   ${PROJECT_SOURCE_DIR}/include
   ${nlohmann_json_INCLUDE_DIRS}
@@ -93,6 +98,8 @@ set_target_properties(${PROJECT_NAME}_core PROPERTIES CXX_EXTENSIONS OFF)
 
 # ─── Server Executable ─────────────────────────────────────────────────────
 add_executable(ProjectNestor_server src/server_main.cpp)
+
+enable_sanitizers(ProjectNestor_server)
 
 target_link_libraries(ProjectNestor_server PRIVATE ${PROJECT_NAME}::core)
 
