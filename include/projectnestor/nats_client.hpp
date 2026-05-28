@@ -25,7 +25,7 @@ class NatsClient {
   // Publish a structured log event to hi.logs.nestor.* (ADR-005).
   // Fire-and-forget: never fails the caller if NATS is unavailable.
   void publish_log(const std::string& subject, const std::string& level, const std::string& message,
-                   const nlohmann::json& metadata);
+                   const nlohmann::json& metadata, const std::string& trace_id = "");
 
  private:
   std::string url_;

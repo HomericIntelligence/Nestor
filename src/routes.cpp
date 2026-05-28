@@ -6,6 +6,7 @@
 
 #include "httplib.h"
 #include "nlohmann/json.hpp"
+#include "projectnestor/trace_context.hpp"
 
 namespace projectnestor {
 
@@ -22,13 +23,19 @@ void register_routes(httplib::Server& server, Store& store, NatsClient& nats) {
 
   // ── Health ────────────────────────────────────────────────────────────────
 
-  server.Get("/v1/health", [](const httplib::Request& /*req*/, httplib::Response& res) {
+  server.Get("/v1/health", [](const httplib::Request& req, httplib::Response& res) {
+    const auto ctx = extract_or_generate(req);
+    res.set_header("X-Request-ID", ctx.trace_id);
+    res.set_header("traceparent", to_traceparent_header(ctx));
     res.set_content(json{{"status", "ok"}}.dump(), "application/json");
   });
 
   // ── Research ─────────────────────────────────────────────────────────────
 
-  server.Get("/v1/research/stats", [sp](const httplib::Request& /*req*/, httplib::Response& res) {
+  server.Get("/v1/research/stats", [sp](const httplib::Request& req, httplib::Response& res) {
+    const auto ctx = extract_or_generate(req);
+    res.set_header("X-Request-ID", ctx.trace_id);
+    res.set_header("traceparent", to_traceparent_header(ctx));
     res.set_content(sp->get_stats().dump(), "application/json");
   });
 
@@ -64,7 +71,11 @@ void register_routes(httplib::Server& server, Store& store, NatsClient& nats) {
                   return;
                 }
 
-                const json result = sp->submit_research(body);
+                const auto ctx = extract_or_generate(req);
+                res.set_header("X-Request-ID", ctx.trace_id);
+                res.set_header("traceparent", to_traceparent_header(ctx));
+
+                const json result = sp->submit_research(body, ctx.trace_id);
                 const std::string id =  // NOLINT
                     result["id"].get<std::string>();
                 const std::string topic = extract_topic(body);  // NOLINT
@@ -74,12 +85,13 @@ void register_routes(httplib::Server& server, Store& store, NatsClient& nats) {
                 json payload = body;
                 payload["id"] = id;
                 payload["status"] = "pending";
+                payload["trace_id"] = ctx.trace_id;
                 np->publish(subject, payload.dump());
 
                 // Structured log: hi.logs.nestor.research_submitted (ADR-005).
                 np->publish_log("hi.logs.nestor.research_submitted", "info",
                                 "Research submitted: topic=" + topic,
-                                json{{"research_id", id}, {"topic", topic}});
+                                json{{"research_id", id}, {"topic", topic}}, ctx.trace_id);
 
                 res.status = 202;
                 res.set_content(result.dump(), "application/json");
@@ -89,6 +101,10 @@ void register_routes(httplib::Server& server, Store& store, NatsClient& nats) {
 
   server.Post("/v1/research/:id/complete",
               [sp, np, extract_topic](const httplib::Request& req, httplib::Response& res) {
+                const auto ctx = extract_or_generate(req);
+                res.set_header("X-Request-ID", ctx.trace_id);
+                res.set_header("traceparent", to_traceparent_header(ctx));
+
                 const std::string id = req.path_params.at("id");  // NOLINT
                 const json updated = sp->complete_research(id);
 
@@ -99,11 +115,14 @@ void register_routes(httplib::Server& server, Store& store, NatsClient& nats) {
                 }
 
                 const std::string topic = extract_topic(updated);  // NOLINT
+                // Per D2: stored trace_id from submit always wins on completion.
+                // Response headers reflect the incoming caller's trace for their logs.
+                const std::string stored_trace_id = updated.value("trace_id", "");
 
                 // Structured log: hi.logs.nestor.research_completed (ADR-005).
                 np->publish_log("hi.logs.nestor.research_completed", "info",
                                 "Research completed: topic=" + topic,
-                                json{{"research_id", id}, {"topic", topic}});
+                                json{{"research_id", id}, {"topic", topic}}, stored_trace_id);
 
                 res.set_content(updated.dump(), "application/json");
               });

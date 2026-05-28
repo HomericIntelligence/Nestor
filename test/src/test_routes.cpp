@@ -250,4 +250,103 @@ TEST_F(RoutesTest, ListResearchReturnsSubmittedItems) {
   EXPECT_TRUE(found2);
 }
 
+TEST_F(RoutesTest, PostResearchEchoesProvidedTraceparent) {
+  const std::string traceparent = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
+  const std::string payload = R"({"idea":"test","context":"ctx"})";
+
+  httplib::Headers headers = auth_headers();
+  headers.insert({"traceparent", traceparent});
+
+  const auto res = client_->Post("/v1/research", headers, payload, "application/json");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->status, 202);
+
+  const auto x_request_id = res->get_header_value("X-Request-ID");
+  EXPECT_EQ(x_request_id, "0af7651916cd43dd8448eb211c80319c");
+
+  const auto response_traceparent = res->get_header_value("traceparent");
+  EXPECT_EQ(response_traceparent, "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01");
+}
+
+TEST_F(RoutesTest, PostResearchGeneratesTraceIdWhenAbsent) {
+  const std::string payload = R"({"idea":"test","context":"ctx"})";
+
+  const auto res = client_->Post("/v1/research", auth_headers(), payload, "application/json");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->status, 202);
+
+  const auto x_request_id = res->get_header_value("X-Request-ID");
+  EXPECT_EQ(x_request_id.length(), 32);
+
+  const auto response_traceparent = res->get_header_value("traceparent");
+  EXPECT_TRUE(response_traceparent.find("00-") == 0);
+  EXPECT_TRUE(response_traceparent.find("-01") != std::string::npos);
+}
+
+TEST_F(RoutesTest, XRequestIdFallbackIsHonored) {
+  const std::string payload = R"({"idea":"test","context":"ctx"})";
+
+  httplib::Headers headers = auth_headers();
+  headers.insert({"X-Request-ID", "0123456789abcdef0123456789abcdef"});
+
+  const auto res = client_->Post("/v1/research", headers, payload, "application/json");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->status, 202);
+
+  const auto x_request_id = res->get_header_value("X-Request-ID");
+  EXPECT_EQ(x_request_id, "0123456789abcdef0123456789abcdef");
+
+  const auto response_traceparent = res->get_header_value("traceparent");
+  EXPECT_TRUE(response_traceparent.find("00-0123456789abcdef0123456789abcdef-") == 0);
+}
+
+TEST_F(RoutesTest, CompleteResearchEchoesIncomingTraceIdInResponse) {
+  // Submit with traceparent A
+  const std::string traceparent_a = "00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1-bbbbbbbbbbbbbbbb-01";
+  const std::string payload = R"({"idea":"test","context":"ctx"})";
+
+  httplib::Headers submit_headers = auth_headers();
+  submit_headers.insert({"traceparent", traceparent_a});
+
+  const auto submit_res = client_->Post("/v1/research", submit_headers, payload, "application/json");
+  ASSERT_TRUE(submit_res);
+  const std::string id = json::parse(submit_res->body)["id"].get<std::string>();
+
+  // Complete with traceparent B
+  const std::string traceparent_b = "00-cccccccccccccccccccccccccccccccc-dddddddddddddddd-01";
+  httplib::Headers complete_headers = auth_headers();
+  complete_headers.insert({"traceparent", traceparent_b});
+
+  const auto complete_res = client_->Post("/v1/research/" + id + "/complete", complete_headers, "", "application/json");
+  ASSERT_TRUE(complete_res);
+
+  // Response should echo B (incoming caller's trace)
+  const auto response_traceparent = complete_res->get_header_value("traceparent");
+  EXPECT_TRUE(response_traceparent.find("00-cccccccccccccccccccccccccccccccc-") == 0);
+}
+
+TEST_F(RoutesTest, HealthEndpointEchoesTraceId) {
+  httplib::Headers headers = auth_headers();
+  headers.insert({"traceparent", "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"});
+
+  const auto res = client_->Get("/v1/health", headers);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->status, 200);
+
+  const auto x_request_id = res->get_header_value("X-Request-ID");
+  EXPECT_EQ(x_request_id, "0af7651916cd43dd8448eb211c80319c");
+}
+
+TEST_F(RoutesTest, StatsEndpointEchoesTraceId) {
+  httplib::Headers headers = auth_headers();
+  headers.insert({"X-Request-ID", "0123456789abcdef0123456789abcdef"});
+
+  const auto res = client_->Get("/v1/research/stats", headers);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->status, 200);
+
+  const auto x_request_id = res->get_header_value("X-Request-ID");
+  EXPECT_EQ(x_request_id, "0123456789abcdef0123456789abcdef");
+}
+
 }  // namespace projectnestor::test

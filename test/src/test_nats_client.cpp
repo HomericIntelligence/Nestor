@@ -56,4 +56,13 @@ TEST(NatsClientTest, PublishLogWhenNotConnectedIsNoOp) {
                                      nlohmann::json{{"research_id", "abc"}, {"topic", "test"}}));
 }
 
+TEST(NatsClientTest, PublishLogWithTraceIdIsNoOpWhenDisconnected) {
+  // publish_log with trace_id must not throw or crash when NATS is unavailable.
+  NatsClient client("nats://127.0.0.1:1");
+  EXPECT_NO_THROW(client.publish_log("hi.logs.nestor.research_submitted", "info",
+                                     "Research submitted: topic=test",
+                                     nlohmann::json{{"research_id", "abc"}, {"topic", "test"}},
+                                     "0123456789abcdef0123456789abcdef"));
+}
+
 }  // namespace projectnestor::test

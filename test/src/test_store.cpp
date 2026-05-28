@@ -262,4 +262,27 @@ TEST(StoreTest, ListResearchAfterSubmissions) {
   EXPECT_TRUE(found2);
 }
 
+TEST(StoreTest, SubmitPersistsTraceId) {
+  Store store;
+  const std::string trace_id = "0123456789abcdef0123456789abcdef";
+  const json body = {{"idea", "test"}};
+
+  const json submit_result = store.submit_research(body, trace_id);
+  const std::string id = submit_result["id"].get<std::string>();
+
+  const json completed = store.complete_research(id);
+  EXPECT_EQ(completed["trace_id"], trace_id);
+}
+
+TEST(StoreTest, SubmitWithoutTraceIdStoresEmpty) {
+  Store store;
+  const json body = {{"idea", "test"}};
+
+  const json submit_result = store.submit_research(body);
+  const std::string id = submit_result["id"].get<std::string>();
+
+  const json completed = store.complete_research(id);
+  EXPECT_EQ(completed["trace_id"], "");
+}
+
 }  // namespace projectnestor::test
