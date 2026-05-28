@@ -40,3 +40,4 @@ Relevant NATS subjects:
 - Test: `ctest --preset debug`
 - All tool invocations via `scripts/` wrappers
 - Never `--no-verify`. Never merge with red CI.
+- PRs to `main` require ≥1 approving review; never self-merge. See `docs/governance/branch-protection.md`.
