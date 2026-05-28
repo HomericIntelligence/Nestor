@@ -1,5 +1,6 @@
 #pragma once
-#include <atomic>
+#include <cstddef>
+#include <deque>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -18,6 +19,10 @@ std::string now_iso8601();
 
 class Store {
  public:
+  static constexpr std::size_t kDefaultMaxItems = 10'000;
+
+  explicit Store(std::size_t max_items = kDefaultMaxItems);
+
   json get_stats() const;
   json submit_research(const json& body);
 
@@ -26,13 +31,19 @@ class Store {
   json complete_research(const std::string& id);
 
  private:
+  // Evict the oldest item from the store. Precondition: caller holds mutex_,
+  // insertion_order_ is non-empty, and its front id is present in research_items_.
+  void evict_oldest_locked();
+
   mutable std::mutex mutex_;
   // No "active" counter: the current API has only `submit_research` (→ pending)
   // and `complete_research` (→ completed) transitions, no claim/start step.
   // A permanently-zero `active` field misled operators reading /v1/research/stats.
   // Re-add it once a real "in-progress" state transition exists.
-  std::atomic<int> completed_{0};
-  std::atomic<int> pending_{0};
+  int completed_{0};
+  int pending_{0};
   std::unordered_map<std::string, json> research_items_;
+  std::deque<std::string> insertion_order_;
+  const std::size_t max_items_;
 };
 }  // namespace projectnestor

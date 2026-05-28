@@ -2,6 +2,8 @@
 
 #include "projectnestor/store.hpp"
 
+#include <algorithm>
+#include <cassert>
 #include <chrono>
 #include <ctime>
 #include <iomanip>
@@ -9,6 +11,8 @@
 #include <sstream>
 
 namespace projectnestor {
+
+Store::Store(std::size_t max_items) : max_items_(max_items) {}
 
 namespace detail {
 
@@ -56,12 +60,14 @@ std::string now_iso8601() {
 }  // namespace detail
 
 json Store::get_stats() const {
+  std::lock_guard<std::mutex> lock(mutex_);
   // "active" is intentionally omitted: there is no claim/start state
   // transition in the current API, so reporting it as a permanently-zero
   // value misled operators. Add it back once submit→active→completed exists.
   return json{
-      {"completed", completed_.load()},
-      {"pending", pending_.load()},
+      {"completed", completed_},
+      {"pending", pending_},
+      {"items_count", static_cast<int>(research_items_.size())},
   };
 }
 
@@ -80,8 +86,12 @@ json Store::submit_research(const json& body) {
   {
     std::lock_guard<std::mutex> lock(mutex_);
     research_items_[id] = item;
+    insertion_order_.push_back(id);
+    ++pending_;
+    while (research_items_.size() > max_items_) {
+      evict_oldest_locked();
+    }
   }
-  ++pending_;
 
   return json{{"id", id}, {"status", "pending"}};
 }
@@ -95,10 +105,39 @@ json Store::complete_research(const std::string& id) {
 
   it->second["status"] = "completed";
   it->second["completed_at"] = detail::now_iso8601();
+  json result = it->second;
+
   --pending_;
   ++completed_;
 
-  return it->second;
+  // Erase from map
+  research_items_.erase(it);
+
+  // Erase from insertion order (linear scan, but bounded by max_items_)
+  auto pos = std::find(insertion_order_.begin(), insertion_order_.end(), id);
+  if (pos != insertion_order_.end()) {
+    insertion_order_.erase(pos);
+  }
+
+  return result;
+}
+
+void Store::evict_oldest_locked() {
+  assert(!insertion_order_.empty());
+  const std::string id = std::move(insertion_order_.front());
+  insertion_order_.pop_front();
+
+  auto it = research_items_.find(id);
+  assert(it != research_items_.end());
+
+  const std::string status = it->second.value("status", "");
+  if (status == "pending") {
+    --pending_;
+  } else if (status == "completed") {
+    --completed_;
+  }
+
+  research_items_.erase(it);
 }
 
 }  // namespace projectnestor
