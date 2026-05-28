@@ -4,6 +4,7 @@
 
 #include "projectnestor/trace_context.hpp"
 
+#include <optional>
 #include <string>
 
 #include "httplib.h"
@@ -12,6 +13,41 @@
 namespace projectnestor {
 
 using json = nlohmann::json;
+
+namespace {
+constexpr std::size_t kMaxIdeaLen = 4096;
+constexpr std::size_t kMaxContextLen = 16384;
+constexpr std::size_t kMaxTopLevelFields = 16;
+
+std::optional<std::string> validate_research_body(const json& b) {
+  if (!b.is_object()) {
+    return "Request body must be a JSON object";
+  }
+  if (b.size() > kMaxTopLevelFields) {
+    return "Request body has too many fields";
+  }
+  if (!b.contains("idea")) {
+    return "Missing required field: idea";
+  }
+  if (!b["idea"].is_string()) {
+    return "Field 'idea' must be a string";
+  }
+  const auto idea = b["idea"].get<std::string>();
+  if (idea.length() > kMaxIdeaLen) {
+    return "Field 'idea' exceeds maximum length";
+  }
+  if (b.contains("context")) {
+    if (!b["context"].is_string()) {
+      return "Field 'context' must be a string";
+    }
+    const auto context = b["context"].get<std::string>();
+    if (context.length() > kMaxContextLen) {
+      return "Field 'context' exceeds maximum length";
+    }
+  }
+  return std::nullopt;
+}
+}  // namespace
 
 void register_routes(httplib::Server& server, Store& store, NatsClient& nats) {
   Store* sp = &store;      // NOLINT
@@ -53,50 +89,57 @@ void register_routes(httplib::Server& server, Store& store, NatsClient& nats) {
     res.set_content(sp->list_research().dump(), "application/json");
   });
 
-  server.Post("/v1/research",
-              [sp, np, extract_topic](const httplib::Request& req, httplib::Response& res) {
-                // Reject anything that doesn't declare a JSON content-type.
-                // Per RFC 9110 §8.3 the media-type may carry parameters
-                // (e.g. "; charset=utf-8"), so match by substring not equality.
-                const std::string ct = req.get_header_value("Content-Type");  // NOLINT
-                if (ct.find("application/json") == std::string::npos) {
-                  res.status = 415;
-                  res.set_content(json{{"detail", "Content-Type must be application/json"}}.dump(),
-                                  "application/json");
-                  return;
-                }
-                const auto body = json::parse(req.body, nullptr, false);
-                if (body.is_discarded()) {
-                  res.status = 400;
-                  res.set_content(json{{"detail", "Invalid JSON"}}.dump(), "application/json");
-                  return;
-                }
+  server.Post(
+      "/v1/research", [sp, np, extract_topic](const httplib::Request& req, httplib::Response& res) {
+        // Reject anything that doesn't declare a JSON content-type.
+        // Per RFC 9110 §8.3 the media-type may carry parameters
+        // (e.g. "; charset=utf-8"), so match by substring not equality.
+        const std::string ct = req.get_header_value("Content-Type");  // NOLINT
+        if (ct.find("application/json") == std::string::npos) {
+          res.status = 415;
+          res.set_content(json{{"detail", "Content-Type must be application/json"}}.dump(),
+                          "application/json");
+          return;
+        }
+        const auto body = json::parse(req.body, nullptr, false);
+        if (body.is_discarded()) {
+          res.status = 400;
+          res.set_content(json{{"detail", "Invalid JSON"}}.dump(), "application/json");
+          return;
+        }
 
-                const auto ctx = extract_or_generate(req);
-                res.set_header("X-Request-ID", ctx.trace_id);
-                res.set_header("traceparent", to_traceparent_header(ctx));
+        const auto validation_error = validate_research_body(body);
+        if (validation_error) {
+          res.status = 400;
+          res.set_content(json{{"detail", validation_error.value()}}.dump(), "application/json");
+          return;
+        }
 
-                const json result = sp->submit_research(body, ctx.trace_id);
-                const std::string id =  // NOLINT
-                    result["id"].get<std::string>();
-                const std::string topic = extract_topic(body);  // NOLINT
+        const auto ctx = extract_or_generate(req);
+        res.set_header("X-Request-ID", ctx.trace_id);
+        res.set_header("traceparent", to_traceparent_header(ctx));
 
-                // Publish to hi.research.<id> — graceful degradation if NATS unavailable.
-                const std::string subject = "hi.research." + id;  // NOLINT
-                json payload = body;
-                payload["id"] = id;
-                payload["status"] = "pending";
-                payload["trace_id"] = ctx.trace_id;
-                np->publish(subject, payload.dump());
+        const json result = sp->submit_research(body, ctx.trace_id);
+        const std::string id =  // NOLINT
+            result["id"].get<std::string>();
+        const std::string topic = extract_topic(body);  // NOLINT
 
-                // Structured log: hi.logs.nestor.research_submitted (ADR-005).
-                np->publish_log("hi.logs.nestor.research_submitted", "info",
-                                "Research submitted: topic=" + topic,
-                                json{{"research_id", id}, {"topic", topic}}, ctx.trace_id);
+        // Publish to hi.research.<id> — graceful degradation if NATS unavailable.
+        const std::string subject = "hi.research." + id;  // NOLINT
+        json payload = body;
+        payload["id"] = id;
+        payload["status"] = "pending";
+        payload["trace_id"] = ctx.trace_id;
+        np->publish(subject, payload.dump());
 
-                res.status = 202;
-                res.set_content(result.dump(), "application/json");
-              });
+        // Structured log: hi.logs.nestor.research_submitted (ADR-005).
+        np->publish_log("hi.logs.nestor.research_submitted", "info",
+                        "Research submitted: topic=" + topic,
+                        json{{"research_id", id}, {"topic", topic}}, ctx.trace_id);
+
+        res.status = 202;
+        res.set_content(result.dump(), "application/json");
+      });
 
   // ── Complete Research ─────────────────────────────────────────────────────
 

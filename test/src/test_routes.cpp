@@ -39,6 +39,7 @@ void RoutesTest::SetUp() {
   ASSERT_TRUE(auth_cfg.has_value());
 
   install_auth_middleware(server_, *auth_cfg);
+  server_.set_payload_max_length(1 * 1024 * 1024);  // 1 MiB
   register_routes(server_, store_, nats_);
   port_ = server_.bind_to_any_port("127.0.0.1");
   thread_ = std::thread([this]() { server_.listen_after_bind(); });
@@ -349,6 +350,96 @@ TEST_F(RoutesTest, StatsEndpointEchoesTraceId) {
 
   const auto x_request_id = res->get_header_value("X-Request-ID");
   EXPECT_EQ(x_request_id, "0123456789abcdef0123456789abcdef");
+}
+
+TEST_F(RoutesTest, PostResearchNonObjectReturns400) {
+  const auto res = client_->Post("/v1/research", auth_headers(), "[1,2,3]", "application/json");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->status, 400);
+  const auto body = json::parse(res->body);
+  EXPECT_TRUE(body.contains("detail"));
+}
+
+TEST_F(RoutesTest, PostResearchMissingIdeaReturns400) {
+  const auto res =
+      client_->Post("/v1/research", auth_headers(), R"({"context":"test"})", "application/json");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->status, 400);
+  const auto body = json::parse(res->body);
+  EXPECT_EQ(body["detail"], "Missing required field: idea");
+}
+
+TEST_F(RoutesTest, PostResearchNonStringIdeaReturns400) {
+  const auto res =
+      client_->Post("/v1/research", auth_headers(), R"({"idea":123})", "application/json");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->status, 400);
+  const auto body = json::parse(res->body);
+  EXPECT_EQ(body["detail"], "Field 'idea' must be a string");
+}
+
+TEST_F(RoutesTest, PostResearchNonStringContextReturns400) {
+  const auto res = client_->Post("/v1/research", auth_headers(), R"({"idea":"test","context":123})",
+                                 "application/json");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->status, 400);
+  const auto body = json::parse(res->body);
+  EXPECT_EQ(body["detail"], "Field 'context' must be a string");
+}
+
+TEST_F(RoutesTest, PostResearchOversizedIdeaReturns400) {
+  const std::string oversized_idea(4097, 'a');
+  const std::string payload = R"({"idea":")" + oversized_idea + R"("})";
+  const auto res = client_->Post("/v1/research", auth_headers(), payload, "application/json");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->status, 400);
+  const auto body = json::parse(res->body);
+  EXPECT_EQ(body["detail"], "Field 'idea' exceeds maximum length");
+}
+
+TEST_F(RoutesTest, PostResearchOversizedContextReturns400) {
+  const std::string oversized_context(16385, 'a');
+  const std::string payload = R"({"idea":"test","context":")" + oversized_context + R"("})";
+  const auto res = client_->Post("/v1/research", auth_headers(), payload, "application/json");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->status, 400);
+  const auto body = json::parse(res->body);
+  EXPECT_EQ(body["detail"], "Field 'context' exceeds maximum length");
+}
+
+TEST_F(RoutesTest, PostResearchAtMaxIdeaLengthReturns202) {
+  const std::string max_idea(4096, 'a');
+  const std::string payload = R"({"idea":")" + max_idea + R"("})";
+  const auto res = client_->Post("/v1/research", auth_headers(), payload, "application/json");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->status, 202);
+}
+
+TEST_F(RoutesTest, PostResearchAtMaxContextLengthReturns202) {
+  const std::string max_context(16384, 'a');
+  const std::string payload = R"({"idea":"test","context":")" + max_context + R"("})";
+  const auto res = client_->Post("/v1/research", auth_headers(), payload, "application/json");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->status, 202);
+}
+
+TEST_F(RoutesTest, PostResearchTooManyFieldsReturns400) {
+  json body;
+  body["idea"] = "test";
+  for (int i = 0; i < 16; ++i) {
+    body["field" + std::to_string(i)] = "value";
+  }
+  const auto res = client_->Post("/v1/research", auth_headers(), body.dump(), "application/json");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->status, 400);
+}
+
+TEST_F(RoutesTest, PostResearchOversizedBodyReturns413) {
+  const std::string oversized_body(2 * 1024 * 1024, 'a');
+  const auto res =
+      client_->Post("/v1/research", auth_headers(), oversized_body, "application/json");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->status, 413);
 }
 
 }  // namespace projectnestor::test
