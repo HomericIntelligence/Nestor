@@ -1,5 +1,6 @@
 // ProjectNestor HTTP Server — C++20
 
+#include "projectnestor/auth.hpp"
 #include "projectnestor/nats_client.hpp"
 #include "projectnestor/routes.hpp"
 #include "projectnestor/store.hpp"
@@ -52,6 +53,12 @@ int main() {
     return env != nullptr ? env : "nats://localhost:4222";
   }();
 
+  auto auth_cfg = projectnestor::load_auth_config_from_env();
+  if (!auth_cfg) {
+    std::cerr << "NESTOR_AUTH_TOKEN is not set (required in auth mode 'required')\n";
+    return 1;
+  }
+
   std::cout << projectnestor::kProjectName << " v" << projectnestor::kVersion << "\n";
   std::cout << "Starting HTTP server on " << host << ":" << port << "\n";
 
@@ -71,6 +78,7 @@ int main() {
   std::signal(SIGINT, signal_handler);
   std::signal(SIGTERM, signal_handler);
 
+  projectnestor::install_auth_middleware(server, *auth_cfg);
   projectnestor::register_routes(server, store, nats);
 
   std::cout << "Routes registered. Listening...\n";

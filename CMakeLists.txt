@@ -70,6 +70,7 @@ add_library(${PROJECT_NAME}_core STATIC
   src/store.cpp
   src/routes.cpp
   src/nats_client.cpp
+  src/auth.cpp
 )
 add_library(${PROJECT_NAME}::core ALIAS ${PROJECT_NAME}_core)
 

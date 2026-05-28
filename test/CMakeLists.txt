@@ -7,6 +7,7 @@ add_executable(${PROJECT_NAME}_tests
   src/test_store.cpp
   src/test_nats_client.cpp
   src/test_routes.cpp
+  src/test_auth.cpp
 )
 
 target_compile_features(${PROJECT_NAME}_tests PRIVATE cxx_std_20)

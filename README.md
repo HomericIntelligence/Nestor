@@ -46,18 +46,41 @@ just test
 ## Running
 
 ```bash
+export NESTOR_AUTH_TOKEN="your-secret-token"
 ./build/debug/bin/projectnestor      # or run via container, below
 ```
 
 By default the HTTP server listens on `0.0.0.0:8080` and publishes events to
 NATS at `nats://127.0.0.1:4222`.
 
-## Environment variables
+All `/v1/*` endpoints require bearer-token authentication (see **Configuration** below).
+
+## Configuration
+
+### Authentication (Required)
+
+All endpoints require bearer-token authentication by default. Set these environment variables:
+
+- **`NESTOR_AUTH_TOKEN`** — your API bearer token (required)
+- **`NESTOR_AUTH_MODE`** — authentication mode: `"required"` or `"none"` (case-sensitive lowercase; defaults to `"required"`)
+
+The server fails to start if `NESTOR_AUTH_TOKEN` is missing or empty in `required` mode.
+
+Example request:
+
+```bash
+curl -H "Authorization: Bearer your-secret-token" http://localhost:8080/v1/health
+# {"status":"ok"}
+```
+
+### Other Environment variables
 
 | Variable | Default | Description |
 |---|---|---|
-| `NESTOR_PORT` | `8080` | HTTP server port |
+| `NESTOR_PORT` | `8081` | HTTP server port |
 | `NATS_URL` | `nats://127.0.0.1:4222` | NATS broker URL for event publication |
+| `NESTOR_AUTH_TOKEN` | *(required)* | Bearer token for authentication |
+| `NESTOR_AUTH_MODE` | `required` | Authentication mode: `"required"` or `"none"` |
 
 ## API
 
