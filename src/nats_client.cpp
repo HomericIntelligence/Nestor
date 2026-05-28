@@ -16,7 +16,7 @@ NatsClient::NatsClient(const std::string& url) : url_(url) {}
 NatsClient::~NatsClient() { close(); }
 
 bool NatsClient::connect() {
-  natsStatus s = natsConnection_ConnectTo(reinterpret_cast<natsConnection**>(&conn_), url_.c_str());
+  natsStatus s = natsConnection_ConnectTo(&conn_, url_.c_str());
   if (s != NATS_OK) {
     std::cerr << "[NatsClient] Failed to connect to " << url_ << ": " << natsStatus_GetText(s)
               << "\n";
@@ -27,11 +27,10 @@ bool NatsClient::connect() {
 
   jsOptions js_opts;
   jsOptions_Init(&js_opts);
-  s = natsConnection_JetStream(reinterpret_cast<jsCtx**>(&js_),
-                               reinterpret_cast<natsConnection*>(conn_), &js_opts);
+  s = natsConnection_JetStream(&js_, conn_, &js_opts);
   if (s != NATS_OK) {
     std::cerr << "[NatsClient] Failed to get JetStream context: " << natsStatus_GetText(s) << "\n";
-    natsConnection_Destroy(reinterpret_cast<natsConnection*>(conn_));
+    natsConnection_Destroy(conn_);
     conn_ = nullptr;
     connected_ = false;
     return false;
@@ -44,11 +43,11 @@ bool NatsClient::connect() {
 
 void NatsClient::close() {
   if (js_ != nullptr) {
-    jsCtx_Destroy(reinterpret_cast<jsCtx*>(js_));
+    jsCtx_Destroy(js_);
     js_ = nullptr;
   }
   if (conn_ != nullptr) {
-    natsConnection_Destroy(reinterpret_cast<natsConnection*>(conn_));
+    natsConnection_Destroy(conn_);
     conn_ = nullptr;
   }
   connected_ = false;
@@ -72,7 +71,7 @@ void NatsClient::ensure_streams() {
 
   jsStreamInfo* si = nullptr;
   jsErrCode jerr = static_cast<jsErrCode>(0);
-  const natsStatus s = js_AddStream(&si, reinterpret_cast<jsCtx*>(js_), &cfg, nullptr, &jerr);
+  const natsStatus s = js_AddStream(&si, js_, &cfg, nullptr, &jerr);
 
   if (s == NATS_OK) {
     jsStreamInfo_Destroy(si);
@@ -93,7 +92,7 @@ bool NatsClient::publish(const std::string& subject, const std::string& payload)
 
   jsPubAck* ack = nullptr;
   jsErrCode jerr = static_cast<jsErrCode>(0);
-  const natsStatus s = js_Publish(&ack, reinterpret_cast<jsCtx*>(js_), subject.c_str(),
+  const natsStatus s = js_Publish(&ack, js_, subject.c_str(),
                                   payload.data(), static_cast<int>(payload.size()), nullptr, &jerr);
 
   if (ack != nullptr) {
@@ -128,7 +127,7 @@ void NatsClient::publish_log(const std::string& subject, const std::string& leve
   // Return value intentionally ignored — log publish failures are non-fatal.
   // The explicit (void) cast satisfies static analysers (cert-err33-c,
   // bugprone-unused-return-value) and documents the intent at the call site.
-  (void)natsConnection_PublishString(reinterpret_cast<natsConnection*>(conn_), subject.c_str(),
+  (void)natsConnection_PublishString(conn_, subject.c_str(),
                                      payload_str.c_str());
 }
 

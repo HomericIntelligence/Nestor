@@ -65,6 +65,9 @@ add_library(${PROJECT_NAME}::core ALIAS ${PROJECT_NAME}_core)
 
 target_include_directories(${PROJECT_NAME}_core PUBLIC
   ${PROJECT_SOURCE_DIR}/include
+  ${nlohmann_json_INCLUDE_DIRS}
+  ${httplib_INCLUDE_DIRS}
+  $<TARGET_PROPERTY:nats_static,INTERFACE_INCLUDE_DIRECTORIES>
 )
 
 target_link_libraries(${PROJECT_NAME}_core PUBLIC
