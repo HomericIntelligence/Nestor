@@ -133,4 +133,102 @@ TEST_F(RoutesTest, StatsReflectsCompletion) {
   EXPECT_EQ(body["completed"], 1);
 }
 
+TEST_F(RoutesTest, GetResearchByIdReturnsItem) {
+  const std::string payload = R"({"idea":"research idea","context":"ctx"})";
+  const auto submit_res = client_->Post("/v1/research", payload, "application/json");
+  ASSERT_TRUE(submit_res);
+  ASSERT_EQ(submit_res->status, 202);
+  const std::string id = json::parse(submit_res->body)["id"].get<std::string>();
+
+  const auto res = client_->Get("/v1/research/" + id);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->status, 200);
+  const auto body = json::parse(res->body);
+  EXPECT_EQ(body["id"], id);
+  EXPECT_EQ(body["idea"], "research idea");
+  EXPECT_EQ(body["status"], "pending");
+}
+
+TEST_F(RoutesTest, GetResearchUnknownIdReturns404) {
+  const auto res = client_->Get("/v1/research/nonexistent-id");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->status, 404);
+  const auto body = json::parse(res->body);
+  EXPECT_EQ(body["error"], "not_found");
+}
+
+TEST_F(RoutesTest, GetResearchByIdNotFoundAfterCompletion) {
+  // complete_research erases the item from the store; GET by id returns 404.
+  const std::string payload = R"({"idea":"complete me","context":"ctx"})";
+  const auto submit_res = client_->Post("/v1/research", payload, "application/json");
+  ASSERT_TRUE(submit_res);
+  ASSERT_EQ(submit_res->status, 202);
+  const std::string id = json::parse(submit_res->body)["id"].get<std::string>();
+
+  const auto complete_res =
+      client_->Post("/v1/research/" + id + "/complete", "", "application/json");
+  ASSERT_TRUE(complete_res);
+  ASSERT_EQ(complete_res->status, 200);
+
+  // Item is erased on completion; get_research returns not_found.
+  const auto get_res = client_->Get("/v1/research/" + id);
+  ASSERT_TRUE(get_res);
+  EXPECT_EQ(get_res->status, 404);
+  const auto body = json::parse(get_res->body);
+  EXPECT_EQ(body["error"], "not_found");
+}
+
+TEST_F(RoutesTest, GetResearchStatsNotMatchedAsId) {
+  // Guards against route-ordering regression: /stats must not be captured as :id.
+  const auto res = client_->Get("/v1/research/stats");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->status, 200);
+  const auto body = json::parse(res->body);
+  EXPECT_FALSE(body.contains("error"));
+  EXPECT_TRUE(body.contains("completed"));
+  EXPECT_TRUE(body.contains("pending"));
+}
+
+TEST_F(RoutesTest, ListResearchEmptyInitially) {
+  const auto res = client_->Get("/v1/research");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->status, 200);
+  const auto body = json::parse(res->body);
+  EXPECT_EQ(body["count"], 0);
+  EXPECT_TRUE(body["items"].is_array());
+  EXPECT_TRUE(body["items"].empty());
+}
+
+TEST_F(RoutesTest, ListResearchReturnsSubmittedItems) {
+  const auto r1 = client_->Post("/v1/research", R"({"idea":"first"})", "application/json");
+  ASSERT_TRUE(r1);
+  ASSERT_EQ(r1->status, 202);
+  const std::string id1 = json::parse(r1->body)["id"].get<std::string>();
+
+  const auto r2 = client_->Post("/v1/research", R"({"idea":"second"})", "application/json");
+  ASSERT_TRUE(r2);
+  ASSERT_EQ(r2->status, 202);
+  const std::string id2 = json::parse(r2->body)["id"].get<std::string>();
+
+  const auto res = client_->Get("/v1/research");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->status, 200);
+  const auto body = json::parse(res->body);
+  EXPECT_EQ(body["count"], 2);
+  ASSERT_TRUE(body["items"].is_array());
+
+  bool found1 = false;
+  bool found2 = false;
+  for (const auto& item : body["items"]) {
+    if (item["id"] == id1) {
+      found1 = true;
+    }
+    if (item["id"] == id2) {
+      found2 = true;
+    }
+  }
+  EXPECT_TRUE(found1);
+  EXPECT_TRUE(found2);
+}
+
 }  // namespace projectnestor::test

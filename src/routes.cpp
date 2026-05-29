@@ -32,6 +32,19 @@ void register_routes(httplib::Server& server, Store& store, NatsClient& nats) {
     res.set_content(sp->get_stats().dump(), "application/json");
   });
 
+  server.Get("/v1/research/:id", [sp](const httplib::Request& req, httplib::Response& res) {
+    const std::string id = req.path_params.at("id");
+    const json item = sp->get_research(id);
+    if (item.contains("error")) {
+      res.status = 404;
+    }
+    res.set_content(item.dump(), "application/json");
+  });
+
+  server.Get("/v1/research", [sp](const httplib::Request& /*req*/, httplib::Response& res) {
+    res.set_content(sp->list_research().dump(), "application/json");
+  });
+
   server.Post("/v1/research",
               [sp, np, extract_topic](const httplib::Request& req, httplib::Response& res) {
                 // Reject anything that doesn't declare a JSON content-type.

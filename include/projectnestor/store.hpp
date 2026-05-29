@@ -30,6 +30,13 @@ class Store {
   // object with {"error": "not_found"} if the id is unknown.
   json complete_research(const std::string& id);
 
+  // Look up a research item by id. Returns the stored item, or
+  // {"error": "not_found"} if the id is unknown or has already been completed.
+  json get_research(const std::string& id) const;
+
+  // Return all stored research items as {"items": [...], "count": N}.
+  json list_research() const;
+
  private:
   // Evict the oldest item from the store. Precondition: caller holds mutex_,
   // insertion_order_ is non-empty, and its front id is present in research_items_.
