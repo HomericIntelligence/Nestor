@@ -89,57 +89,67 @@ void register_routes(httplib::Server& server, Store& store, NatsClient& nats) {
     res.set_content(sp->list_research().dump(), "application/json");
   });
 
-  server.Post(
-      "/v1/research", [sp, np, extract_topic](const httplib::Request& req, httplib::Response& res) {
-        // Reject anything that doesn't declare a JSON content-type.
-        // Per RFC 9110 §8.3 the media-type may carry parameters
-        // (e.g. "; charset=utf-8"), so match by substring not equality.
-        const std::string ct = req.get_header_value("Content-Type");  // NOLINT
-        if (ct.find("application/json") == std::string::npos) {
-          res.status = 415;
-          res.set_content(json{{"detail", "Content-Type must be application/json"}}.dump(),
-                          "application/json");
-          return;
-        }
-        const auto body = json::parse(req.body, nullptr, false);
-        if (body.is_discarded()) {
-          res.status = 400;
-          res.set_content(json{{"detail", "Invalid JSON"}}.dump(), "application/json");
-          return;
-        }
+  server.Post("/v1/research", [sp, np, extract_topic](const httplib::Request& req,
+                                                      httplib::Response& res) {
+    // Reject anything that doesn't declare a JSON content-type.
+    // Per RFC 9110 §8.3 the media-type may carry parameters
+    // (e.g. "; charset=utf-8"), so match by substring not equality.
+    const std::string ct = req.get_header_value("Content-Type");  // NOLINT
+    if (ct.find("application/json") == std::string::npos) {
+      res.status = 415;
+      res.set_content(json{{"detail", "Content-Type must be application/json"}}.dump(),
+                      "application/json");
+      return;
+    }
+    const auto body = json::parse(req.body, nullptr, false);
+    if (body.is_discarded()) {
+      res.status = 400;
+      res.set_content(json{{"detail", "Invalid JSON"}}.dump(), "application/json");
+      return;
+    }
 
-        const auto validation_error = validate_research_body(body);
-        if (validation_error) {
-          res.status = 400;
-          res.set_content(json{{"detail", validation_error.value()}}.dump(), "application/json");
-          return;
-        }
+    const auto validation_error = validate_research_body(body);
+    if (validation_error) {
+      res.status = 400;
+      res.set_content(json{{"detail", validation_error.value()}}.dump(), "application/json");
+      return;
+    }
 
-        const auto ctx = extract_or_generate(req);
-        res.set_header("X-Request-ID", ctx.trace_id);
-        res.set_header("traceparent", to_traceparent_header(ctx));
+    const auto ctx = extract_or_generate(req);
+    res.set_header("X-Request-ID", ctx.trace_id);
+    res.set_header("traceparent", to_traceparent_header(ctx));
 
-        const json result = sp->submit_research(body, ctx.trace_id);
-        const std::string id =  // NOLINT
-            result["id"].get<std::string>();
-        const std::string topic = extract_topic(body);  // NOLINT
+    const json result = sp->submit_research(body, ctx.trace_id);
+    // Guard: check for capacity error BEFORE any result["id"] access.
+    // submit_research returns {"error":"capacity"} when the store is full.
+    if (result.contains("error")) {
+      res.status = 503;
+      res.set_content(json{{"detail", "research capacity exhausted"}}.dump(), "application/json");
+      np->publish_log("hi.logs.nestor.research_rejected", "warn",
+                      "Research rejected: capacity exhausted", json{{"reason", result["error"]}},
+                      ctx.trace_id);
+      return;
+    }
+    const std::string id =  // NOLINT
+        result["id"].get<std::string>();
+    const std::string topic = extract_topic(body);  // NOLINT
 
-        // Publish to hi.research.<id> — graceful degradation if NATS unavailable.
-        const std::string subject = "hi.research." + id;  // NOLINT
-        json payload = body;
-        payload["id"] = id;
-        payload["status"] = "pending";
-        payload["trace_id"] = ctx.trace_id;
-        np->publish(subject, payload.dump());
+    // Publish to hi.research.<id> — graceful degradation if NATS unavailable.
+    const std::string subject = "hi.research." + id;  // NOLINT
+    json payload = body;
+    payload["id"] = id;
+    payload["status"] = "pending";
+    payload["trace_id"] = ctx.trace_id;
+    np->publish(subject, payload.dump());
 
-        // Structured log: hi.logs.nestor.research_submitted (ADR-005).
-        np->publish_log("hi.logs.nestor.research_submitted", "info",
-                        "Research submitted: topic=" + topic,
-                        json{{"research_id", id}, {"topic", topic}}, ctx.trace_id);
+    // Structured log: hi.logs.nestor.research_submitted (ADR-005).
+    np->publish_log("hi.logs.nestor.research_submitted", "info",
+                    "Research submitted: topic=" + topic,
+                    json{{"research_id", id}, {"topic", topic}}, ctx.trace_id);
 
-        res.status = 202;
-        res.set_content(result.dump(), "application/json");
-      });
+    res.status = 202;
+    res.set_content(result.dump(), "application/json");
+  });
 
   // ── Complete Research ─────────────────────────────────────────────────────
 

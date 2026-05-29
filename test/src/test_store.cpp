@@ -103,7 +103,9 @@ TEST(StoreTest, CompleteResearchUnknownIdReturnsError) {
   EXPECT_EQ(result["error"], "not_found");
 }
 
-TEST(StoreTest, CompleteResearchErasesItem) {
+// Verify eager erase: completing an item removes it from the map so a second
+// complete on the same id returns not_found.
+TEST(StoreTest, CompleteResearchErasesItemFromMap) {
   Store store;
   const json submit_result = store.submit_research({{"idea", "test idea"}});
   const std::string id = submit_result["id"].get<std::string>();
@@ -117,62 +119,113 @@ TEST(StoreTest, CompleteResearchErasesItem) {
   EXPECT_EQ(not_found["error"], "not_found");
 }
 
-TEST(StoreTest, EvictsOldestWhenCapExceeded) {
-  Store store(3);
-  std::string oldest_id;
-
-  // Submit 4 items, cap is 3
-  for (int i = 0; i < 4; ++i) {
-    const json result = store.submit_research({{"idea", "idea"}});
-    const std::string id = result["id"].get<std::string>();
-    if (i == 0) {
-      oldest_id = id;
-    }
-  }
-
-  // The oldest item should have been evicted, so complete_research returns not_found
-  const json evicted = store.complete_research(oldest_id);
-  EXPECT_EQ(evicted["error"], "not_found");
-
-  // The other 3 items should still be there
-  const json stats = store.get_stats();
-  EXPECT_EQ(stats["pending"], 3);
-}
-
-TEST(StoreTest, EvictionDecrementsPendingCounter) {
+// Verify hard capacity rejection: submit returns {"error":"capacity"} when full.
+TEST(StoreTest, SubmitRejectsWhenAtCapacity) {
   Store store(2);
+  const json r1 = store.submit_research({{"idea", "a"}});
+  const json r2 = store.submit_research({{"idea", "b"}});
+  EXPECT_EQ(r1["status"], "pending");
+  EXPECT_EQ(r2["status"], "pending");
 
-  // Submit 3 pending items, cap is 2
-  store.submit_research({{"idea", "a"}});
-  store.submit_research({{"idea", "b"}});
-  store.submit_research({{"idea", "c"}});
+  const json r3 = store.submit_research({{"idea", "c"}});
+  EXPECT_TRUE(r3.contains("error"));
+  EXPECT_EQ(r3["error"], "capacity");
 
-  // The oldest item (a) should have been evicted
+  // Counter unchanged: still 2 pending, 0 completed
   const json stats = store.get_stats();
   EXPECT_EQ(stats["pending"], 2);
 }
 
-TEST(StoreTest, EvictionPreservesFifoOrder) {
+// Verify capacity slot is freed after completion: fill to cap, complete one,
+// then the next submit succeeds.
+TEST(StoreTest, CapacityRespectedAfterCompletion) {
   Store store(2);
+  const json r1 = store.submit_research({{"idea", "a"}});
+  store.submit_research({{"idea", "b"}});
 
-  const json a_result = store.submit_research({{"idea", "a"}});
-  const std::string a_id = a_result["id"].get<std::string>();
+  // At cap — next submit would fail
+  const json full = store.submit_research({{"idea", "c"}});
+  EXPECT_EQ(full["error"], "capacity");
 
-  const json b_result = store.submit_research({{"idea", "b"}});
-  const std::string b_id = b_result["id"].get<std::string>();
+  // Complete one item to free a slot
+  const std::string id = r1["id"].get<std::string>();
+  store.complete_research(id);
 
-  const json c_result = store.submit_research({{"idea", "c"}});
-  // const std::string c_id = c_result["id"].get<std::string>();
+  // Now submit should succeed
+  const json r3 = store.submit_research({{"idea", "c"}});
+  EXPECT_FALSE(r3.contains("error"));
+  EXPECT_EQ(r3["status"], "pending");
+}
 
-  // Only a (oldest) should be evicted
-  EXPECT_EQ(store.complete_research(a_id)["error"], "not_found");
+// Verify TTL-based eviction fires on the next submit_research call.
+// Uses seconds(-1) as the TTL so any item is immediately eligible for eviction
+// without relying on sub-second clock resolution (avoids same-tick flakiness).
+TEST(StoreTest, PendingItemsEvictedOnNextSubmit) {
+  Store store(10, std::chrono::seconds(-1));
 
-  // b and c should still be completeable
-  const json b_completed = store.complete_research(b_id);
-  EXPECT_EQ(b_completed["status"], "completed");
+  const json r1 = store.submit_research({{"idea", "first"}});
+  EXPECT_EQ(r1["status"], "pending");
 
-  const json c_completed = store.complete_research(c_result["id"].get<std::string>());
-  EXPECT_EQ(c_completed["status"], "completed");
+  // Second submit triggers the sweep; the first item is past TTL and evicted
+  const json r2 = store.submit_research({{"idea", "second"}});
+  EXPECT_EQ(r2["status"], "pending");
+
+  const json stats = store.get_stats();
+  EXPECT_EQ(stats["expired"], 1);
+  EXPECT_EQ(stats["pending"], 1);
+}
+
+// Verify the R3 fix: complete_research does NOT trigger TTL eviction.
+// A pending item at/past TTL must still be completeable — the caller's intent
+// is honoured. The sweep runs only in submit_research.
+TEST(StoreTest, CompleteDoesNotEvictTtlExpiredItem) {
+  // Use negative TTL so any item is immediately eligible for TTL eviction
+  Store store(10, std::chrono::seconds(-1));
+
+  const json r1 = store.submit_research({{"idea", "test"}});
+  EXPECT_EQ(r1["status"], "pending");
+  const std::string id = r1["id"].get<std::string>();
+
+  // complete_research must succeed even though the item is past TTL.
+  // If it incorrectly ran a TTL sweep, it would evict the item and return
+  // not_found — the test would catch that regression.
+  const json completed = store.complete_research(id);
+  EXPECT_FALSE(completed.contains("error")) << "Got error: " << completed.dump();
+  EXPECT_EQ(completed["status"], "completed");
+  EXPECT_EQ(completed["id"], id);
+}
+
+// Verify the expired counter is exposed in stats and starts at zero.
+TEST(StoreTest, StatsExposesExpiredCounter) {
+  Store store;
+  const json stats = store.get_stats();
+  EXPECT_TRUE(stats.contains("expired"));
+  EXPECT_EQ(stats["expired"], 0);
+}
+
+// Verify pending_ count consistency under concurrent submit-only load.
+// 8 threads × 100 submits, no completes, cap = 10000.
+// Validates that ++pending_ happens inside the mutex (no lost increments).
+TEST(StoreTest, PendingCountIsConsistentUnderInterleaving) {
+  constexpr int kThreads = 8;
+  constexpr int kSubmitsPerThread = 100;
+  Store store(10000);
+
+  std::vector<std::thread> threads;
+  threads.reserve(kThreads);
+  for (int t = 0; t < kThreads; ++t) {
+    threads.emplace_back([&store]() {
+      for (int i = 0; i < kSubmitsPerThread; ++i) {
+        store.submit_research({{"idea", "test"}});
+      }
+    });
+  }
+  for (auto& t : threads) {
+    t.join();
+  }
+
+  const json stats = store.get_stats();
+  EXPECT_EQ(stats["pending"], kThreads * kSubmitsPerThread);
 }
 
 TEST(StoreTest, ConcurrentSubmitAndCompleteCounterConsistency) {
@@ -185,8 +238,10 @@ TEST(StoreTest, ConcurrentSubmitAndCompleteCounterConsistency) {
     threads.emplace_back([&store, ops_per_thread]() {
       for (int i = 0; i < ops_per_thread; ++i) {
         const json submit_result = store.submit_research({{"idea", "test"}});
-        const std::string id = submit_result["id"].get<std::string>();
-        store.complete_research(id);
+        if (!submit_result.contains("error")) {
+          const std::string id = submit_result["id"].get<std::string>();
+          store.complete_research(id);
+        }
       }
     });
   }
@@ -199,14 +254,6 @@ TEST(StoreTest, ConcurrentSubmitAndCompleteCounterConsistency) {
   const json stats = store.get_stats();
   EXPECT_EQ(stats["pending"], 0);
   EXPECT_EQ(stats["completed"], num_threads * ops_per_thread);
-
-  // All items should have been erased
-  // Verify by attempting to complete a few non-existent ids
-  const json check1 = store.complete_research("nonexistent-1");
-  EXPECT_EQ(check1["error"], "not_found");
-
-  const json check2 = store.complete_research("nonexistent-2");
-  EXPECT_EQ(check2["error"], "not_found");
 }
 
 TEST(StoreTest, GetResearchReturnsSubmittedItem) {

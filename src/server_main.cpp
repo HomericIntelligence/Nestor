@@ -6,6 +6,7 @@
 #include "projectnestor/store.hpp"
 #include "projectnestor/version.hpp"
 
+#include <chrono>
 #include <csignal>
 #include <cstdlib>
 #include <exception>
@@ -59,10 +60,41 @@ int main() {
     return 1;
   }
 
+  const std::size_t max_items = []() -> std::size_t {
+    constexpr std::size_t kDefault = projectnestor::Store::kDefaultMaxItems;
+    const char* env = std::getenv("NESTOR_MAX_ITEMS");
+    if (env == nullptr) {
+      return kDefault;
+    }
+    try {
+      const unsigned long long v = std::stoull(env);
+      return static_cast<std::size_t>(v);
+    } catch (const std::exception& e) {
+      std::cerr << "[main] Invalid NESTOR_MAX_ITEMS=\"" << env << "\" (" << e.what()
+                << "); falling back to " << kDefault << ".\n";
+      return kDefault;
+    }
+  }();
+
+  const long pending_ttl_seconds = []() -> long {
+    constexpr long kDefault = projectnestor::Store::kDefaultPendingTtlSeconds;
+    const char* env = std::getenv("NESTOR_PENDING_TTL_SECONDS");
+    if (env == nullptr) {
+      return kDefault;
+    }
+    try {
+      return std::stol(env);
+    } catch (const std::exception& e) {
+      std::cerr << "[main] Invalid NESTOR_PENDING_TTL_SECONDS=\"" << env << "\" (" << e.what()
+                << "); falling back to " << kDefault << ".\n";
+      return kDefault;
+    }
+  }();
+
   std::cout << projectnestor::kProjectName << " v" << projectnestor::kVersion << "\n";
   std::cout << "Starting HTTP server on " << host << ":" << port << "\n";
 
-  projectnestor::Store store;
+  projectnestor::Store store(max_items, std::chrono::seconds{pending_ttl_seconds});
   projectnestor::NatsClient nats(nats_url);
 
   // Graceful degradation: server runs even if NATS is unavailable.
