@@ -97,11 +97,11 @@ int main() {
   projectnestor::Store store(max_items, std::chrono::seconds{pending_ttl_seconds});
   projectnestor::NatsClient nats(nats_url);
 
-  // Graceful degradation: server runs even if NATS is unavailable.
+  // Graceful degradation: server runs even if NATS is unavailable at startup.
+  // On connect() failure the client starts a background reconnect loop; JetStream
+  // provisioning (including ensure_streams()) is handled by the provisioner thread.
   if (!nats.connect()) {
-    std::cout << "[main] NATS unavailable — running without event publishing.\n";
-  } else {
-    nats.ensure_streams();
+    std::cout << "[main] NATS unreachable at startup — retrying in background.\n";
   }
 
   httplib::Server server;

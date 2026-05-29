@@ -93,6 +93,12 @@ target_link_libraries(${PROJECT_NAME}_core PUBLIC
 target_compile_features(${PROJECT_NAME}_core PUBLIC cxx_std_20)
 set_target_properties(${PROJECT_NAME}_core PROPERTIES CXX_EXTENSIONS OFF)
 
+# Expose the NATS_CLIENT_TEST_HOOKS preprocessor gate in test builds so that
+# test-only injection points in nats_client.cpp are compiled in (issue #47).
+if(${PROJECT_NAME}_BUILD_TESTING)
+  target_compile_definitions(${PROJECT_NAME}_core PRIVATE NATS_CLIENT_TEST_HOOKS)
+endif()
+
 # ─── Server Executable ─────────────────────────────────────────────────────
 add_executable(ProjectNestor_server src/server_main.cpp)
 
