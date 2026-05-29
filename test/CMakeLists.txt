@@ -5,6 +5,7 @@ find_package(GTest REQUIRED)
 add_executable(${PROJECT_NAME}_tests
   src/test_main.cpp
   src/test_store.cpp
+  src/test_store_concurrent.cpp
   src/test_nats_client.cpp
   src/test_routes.cpp
 )
@@ -23,18 +24,27 @@ target_link_libraries(${PROJECT_NAME}_tests
     GTest::gtest_main)
 
 include(GoogleTest)
-# Label tests so the unit/integration split in CI works (#30):
+# Label tests so the unit/integration/concurrency split in CI works:
 #   - Tests in the "Routes" suite exercise the HTTP layer end-to-end and are
 #     labelled "integration".
+#   - Tests in the "StoreConcurrencyTest" suite are labelled "concurrency" and
+#     excluded from the "unit" pass so they do not inflate fast-feedback times.
 #   - All other tests are labelled "unit".
-# Two discovery passes are required because gtest_discover_tests applies one
-# LABELS property per call.
+# Three discovery passes are required because gtest_discover_tests applies one
+# LABELS property per call.  The GTest filter "*-A:B" uses the
+# positive*-negative syntax to exclude both Routes and StoreConcurrencyTest
+# from the unit pass (GTest colon separates negative patterns after the "-").
 gtest_discover_tests(${PROJECT_NAME}_tests
-  TEST_FILTER "-*Routes*"
+  TEST_FILTER "*-*Routes*:*StoreConcurrency*"
   PROPERTIES LABELS "unit"
 )
 gtest_discover_tests(${PROJECT_NAME}_tests
   TEST_FILTER "*Routes*"
   TEST_PREFIX "integration."
   PROPERTIES LABELS "integration"
+)
+gtest_discover_tests(${PROJECT_NAME}_tests
+  TEST_FILTER "*StoreConcurrency*"
+  TEST_PREFIX "concurrency."
+  PROPERTIES LABELS "concurrency"
 )
