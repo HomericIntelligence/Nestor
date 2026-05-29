@@ -9,16 +9,16 @@ platforms = ["linux-64"]
 cmake = ">=3.20"
 ninja = ">=1.11"
 cxx-compiler = ">=1.7"
-conan = ">=2.0"
+conan = ">=2.3"
 openssl = ">=3"
 clang-tools = ">=17"
 gcovr = ">=7"
 pre-commit = ">=3"
 
 [tasks]
-deps = "conan install . --output-folder=build/debug --profile=conan/profiles/debug --build=missing"
+deps = "conan profile detect --exist-ok && conan install . --output-folder=build/debug --profile:all=conan/profiles/nestor-debug --build=missing"
 build = { cmd = "cmake --preset debug && cmake --build --preset debug", depends-on = ["deps"] }
 test = "ctest --preset debug --output-on-failure"
 lint = "./scripts/lint.sh"
 format = "./scripts/format.sh"
-coverage = "conan install . --output-folder=build/coverage --profile=conan/profiles/debug --build=missing && cmake --preset coverage && cmake --build --preset coverage && ./scripts/coverage.sh"
+coverage = "conan profile detect --exist-ok && conan install . --output-folder=build/coverage --profile:all=conan/profiles/nestor-debug --build=missing && cmake --preset coverage && cmake --build --preset coverage && ./scripts/coverage.sh"
