@@ -1,5 +1,6 @@
 #include "projectnestor/auth.hpp"
 #include "projectnestor/nats_client.hpp"
+#include "projectnestor/rate_limiter.hpp"
 #include "projectnestor/routes.hpp"
 #include "projectnestor/store.hpp"
 
@@ -15,6 +16,32 @@ namespace projectnestor::test {
 
 using json = nlohmann::json;
 
+// ─── Permissive config helpers ────────────────────────────────────────────────
+// High burst + high RPS so existing tests are unaffected by rate limiting.
+static RateLimitConfig permissive_cfg() {
+  RateLimitConfig cfg;
+  cfg.default_rps = 10000.0;
+  cfg.default_burst = 10000.0;
+  cfg.research_rps = 10000.0;
+  cfg.research_burst = 10000.0;
+  cfg.disabled = false;
+  return cfg;
+}
+
+// Strict config for rate-limit integration tests: research_burst=2 so the 3rd
+// request triggers a 429.
+static RateLimitConfig strict_research_cfg() {
+  RateLimitConfig cfg;
+  cfg.default_rps = 10000.0;
+  cfg.default_burst = 10000.0;
+  cfg.research_rps = 1.0;
+  cfg.research_burst = 2.0;
+  cfg.disabled = false;
+  return cfg;
+}
+
+// ─── RoutesTest (permissive rate limits) ─────────────────────────────────────
+
 class RoutesTest : public ::testing::Test {
  protected:
   void SetUp() override;
@@ -26,6 +53,7 @@ class RoutesTest : public ::testing::Test {
   httplib::Server server_;
   Store store_;
   NatsClient nats_{"nats://localhost:1"};
+  RateLimiter limiter_{permissive_cfg()};
   int port_{0};
   std::thread thread_;
   std::unique_ptr<httplib::Client> client_;
@@ -40,7 +68,7 @@ void RoutesTest::SetUp() {
 
   install_auth_middleware(server_, *auth_cfg);
   server_.set_payload_max_length(1 * 1024 * 1024);  // 1 MiB
-  register_routes(server_, store_, nats_);
+  register_routes(server_, store_, nats_, limiter_);
   port_ = server_.bind_to_any_port("127.0.0.1");
   thread_ = std::thread([this]() { server_.listen_after_bind(); });
   client_ = std::make_unique<httplib::Client>("127.0.0.1", port_);
@@ -440,6 +468,109 @@ TEST_F(RoutesTest, PostResearchOversizedBodyReturns413) {
       client_->Post("/v1/research", auth_headers(), oversized_body, "application/json");
   ASSERT_TRUE(res);
   EXPECT_EQ(res->status, 413);
+}
+
+// ─── StrictRateLimitRoutesTest ────────────────────────────────────────────────
+// Uses a strict config (research_burst=2) to verify 429 behaviour.
+
+class StrictRateLimitRoutesTest : public ::testing::Test {
+ protected:
+  void SetUp() override;
+  void TearDown() override;
+  httplib::Headers auth_headers() const {
+    return httplib::Headers{{"Authorization", "Bearer test-token"}};
+  }
+
+  httplib::Server server_;
+  Store store_;
+  NatsClient nats_{"nats://localhost:1"};
+  RateLimiter limiter_{strict_research_cfg()};
+  int port_{0};
+  std::thread thread_;
+  std::unique_ptr<httplib::Client> client_;
+};
+
+void StrictRateLimitRoutesTest::SetUp() {
+  ::setenv("NESTOR_AUTH_TOKEN", "test-token", 1);
+  ::setenv("NESTOR_AUTH_MODE", "required", 1);
+
+  auto auth_cfg = load_auth_config_from_env();
+  ASSERT_TRUE(auth_cfg.has_value());
+
+  install_auth_middleware(server_, *auth_cfg);
+  register_routes(server_, store_, nats_, limiter_);
+  port_ = server_.bind_to_any_port("127.0.0.1");
+  thread_ = std::thread([this]() { server_.listen_after_bind(); });
+  client_ = std::make_unique<httplib::Client>("127.0.0.1", port_);
+  client_->set_connection_timeout(5);
+  client_->set_read_timeout(5);
+}
+
+void StrictRateLimitRoutesTest::TearDown() {
+  server_.stop();
+  thread_.join();
+}
+
+// Send 3 sequential POSTs; with burst=2 the 3rd must be 429.
+TEST_F(StrictRateLimitRoutesTest, PostResearchRateLimitedReturns429) {
+  const std::string payload = R"({"idea":"x","context":"y"})";
+
+  const auto r1 = client_->Post("/v1/research", auth_headers(), payload, "application/json");
+  ASSERT_TRUE(r1);
+  EXPECT_NE(r1->status, 429) << "First request should not be rate limited";
+
+  const auto r2 = client_->Post("/v1/research", auth_headers(), payload, "application/json");
+  ASSERT_TRUE(r2);
+  EXPECT_NE(r2->status, 429) << "Second request should not be rate limited";
+
+  const auto r3 = client_->Post("/v1/research", auth_headers(), payload, "application/json");
+  ASSERT_TRUE(r3);
+  EXPECT_EQ(r3->status, 429) << "Third request must be rate limited";
+
+  // Retry-After header must be present and parse as a positive integer.
+  const std::string retry_after = r3->get_header_value("Retry-After");
+  EXPECT_FALSE(retry_after.empty()) << "Retry-After header must be present on 429";
+  EXPECT_GT(std::stoi(retry_after), 0) << "Retry-After must be a positive integer";
+}
+
+// With burst=2 for research, flooding /v1/research should not exhaust the
+// default bucket used for /v1/health (separate per RouteClass).
+TEST_F(StrictRateLimitRoutesTest, HealthEndpointNotStarvedByResearchFlood) {
+  const std::string payload = R"({"idea":"flood","context":"ctx"})";
+
+  // Flood until we get at least one 429.
+  bool got429 = false;
+  for (int i = 0; i < 10; ++i) {
+    const auto r = client_->Post("/v1/research", auth_headers(), payload, "application/json");
+    if (r && r->status == 429) {
+      got429 = true;
+    }
+  }
+  ASSERT_TRUE(got429) << "At least one /v1/research request must be rate-limited";
+
+  // Health endpoint should still respond 200 (uses Default bucket, not Research).
+  const auto health_res = client_->Get("/v1/health", auth_headers());
+  ASSERT_TRUE(health_res);
+  EXPECT_EQ(health_res->status, 200) << "GET /v1/health must not be starved by /v1/research flood";
+}
+
+// Assert that the 429 body is exactly {"detail":"rate_limited"}.
+TEST_F(StrictRateLimitRoutesTest, RateLimit429ResponseBodyShape) {
+  const std::string payload = R"({"idea":"x","context":"y"})";
+
+  // Drain the burst.
+  for (int i = 0; i < 2; ++i) {
+    client_->Post("/v1/research", auth_headers(), payload, "application/json");
+  }
+
+  const auto r = client_->Post("/v1/research", auth_headers(), payload, "application/json");
+  ASSERT_TRUE(r);
+  ASSERT_EQ(r->status, 429);
+
+  const auto body = json::parse(r->body, nullptr, /*allow_exceptions=*/false);
+  ASSERT_FALSE(body.is_discarded()) << "429 body must be valid JSON";
+  ASSERT_TRUE(body.contains("detail")) << "429 body must contain 'detail' key";
+  EXPECT_EQ(body["detail"].get<std::string>(), "rate_limited");
 }
 
 }  // namespace projectnestor::test

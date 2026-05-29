@@ -2,6 +2,7 @@
 
 #include "projectnestor/auth.hpp"
 #include "projectnestor/nats_client.hpp"
+#include "projectnestor/rate_limiter.hpp"
 #include "projectnestor/routes.hpp"
 #include "projectnestor/store.hpp"
 #include "projectnestor/version.hpp"
@@ -94,6 +95,13 @@ int main() {
   std::cout << projectnestor::kProjectName << " v" << projectnestor::kVersion << "\n";
   std::cout << "Starting HTTP server on " << host << ":" << port << "\n";
 
+  // ── Rate limiter ─────────────────────────────────────────────────────────
+  // Read config from environment before connecting NATS so we can log early.
+  // NESTOR_RATELIMIT_DISABLE=1 is a fail-loud escape hatch: it emits an ERROR
+  // log and a NATS audit event so any production misconfiguration is visible.
+  // See: include/projectnestor/rate_limiter.hpp for the full invariant doc.
+  const projectnestor::RateLimitConfig rl_cfg = projectnestor::RateLimitConfig::from_env();
+
   projectnestor::Store store(max_items, std::chrono::seconds{pending_ttl_seconds});
   projectnestor::NatsClient nats(nats_url);
 
@@ -103,6 +111,27 @@ int main() {
   if (!nats.connect()) {
     std::cout << "[main] NATS unreachable at startup — retrying in background.\n";
   }
+
+  if (rl_cfg.disabled) {
+    // Fail-loud: emit ERROR to stderr AND publish a NATS audit event so the
+    // disable flag is visible in central log aggregation (ADR-005).
+    // DO NOT SET NESTOR_RATELIMIT_DISABLE=1 IN PRODUCTION.
+    std::cerr << "[ratelimit] ERROR: DISABLED via NESTOR_RATELIMIT_DISABLE"
+                 " — DO NOT USE IN PRODUCTION\n";
+    nats.publish_log("hi.logs.nestor.ratelimit_disabled", "error",
+                     "Rate limiting DISABLED via NESTOR_RATELIMIT_DISABLE"
+                     " — DO NOT USE IN PRODUCTION",
+                     {});
+  } else {
+    std::cout << "[ratelimit] INFO: enabled" << " default_rps=" << rl_cfg.default_rps
+              << " default_burst=" << rl_cfg.default_burst
+              << " research_rps=" << rl_cfg.research_rps
+              << " research_burst=" << rl_cfg.research_burst << "\n";
+  }
+
+  // Construct limiter on main() stack — outlives server.listen() which blocks
+  // until shutdown. Pointer captured by route lambdas (never dangling).
+  projectnestor::RateLimiter limiter{rl_cfg};
 
   httplib::Server server;
   g_server = &server;
@@ -115,7 +144,7 @@ int main() {
   std::signal(SIGTERM, signal_handler);
 
   projectnestor::install_auth_middleware(server, *auth_cfg);
-  projectnestor::register_routes(server, store, nats);
+  projectnestor::register_routes(server, store, nats, limiter);
 
   std::cout << "Routes registered. Listening...\n";
   if (!server.listen(host, port)) {
