@@ -6,6 +6,8 @@ class ProjectNestorConan(ConanFile):
     name = "projectnestor"
     version = "0.1.0"
     settings = "os", "compiler", "build_type", "arch"
+    # Enable OpenSSL support in cpp-httplib so SSLServer is available.
+    default_options = {"cpp-httplib/*:with_openssl": True}
 
     def requirements(self):
         self.requires("cpp-httplib/0.18.3")

@@ -4,7 +4,9 @@
 #include "projectnestor/nats_client.hpp"
 #include "projectnestor/rate_limiter.hpp"
 #include "projectnestor/routes.hpp"
+#include "projectnestor/security_warnings.hpp"
 #include "projectnestor/store.hpp"
+#include "projectnestor/tls_config.hpp"
 #include "projectnestor/version.hpp"
 
 #include <chrono>
@@ -18,6 +20,11 @@
 #include "httplib.h"
 
 namespace {
+// g_server is a base-class pointer so the same signal handler works for both
+// httplib::Server and httplib::SSLServer. stop() is declared on Server and is
+// safe to call through the base pointer for both subclasses in cpp-httplib
+// 0.18.3 (verified: SSLServer::listen_after_bind() uses the same svr_sock_
+// member; stop() closes it via Server::stop()).
 httplib::Server* g_server = nullptr;
 
 void signal_handler(int /*signal*/) {
@@ -34,7 +41,13 @@ void signal_handler(int /*signal*/) {
 }  // namespace
 
 int main() {
-  const std::string host = "0.0.0.0";
+  // ── Bind address (default: loopback only) ────────────────────────────────
+  const std::string host = []() -> std::string {
+    const char* env = std::getenv("NESTOR_BIND_ADDR");
+    return (env != nullptr && env[0] != '\0') ? env : "127.0.0.1";
+  }();
+
+  // ── Port ─────────────────────────────────────────────────────────────────
   const int port = []() -> int {
     constexpr int kDefaultPort = 8081;
     const char* env = std::getenv("NESTOR_PORT");
@@ -50,6 +63,16 @@ int main() {
     }
   }();
 
+  // ── TLS configuration ─────────────────────────────────────────────────────
+  const auto tls = projectnestor::TlsConfig::from_env(std::cerr);
+  if (!tls.has_value()) {
+    return 1;
+  }
+
+  // ── Security posture warning ──────────────────────────────────────────────
+  projectnestor::log_security_posture(std::cerr, host, tls->enabled);
+
+  // ── NATS URL ─────────────────────────────────────────────────────────────
   const std::string nats_url = []() -> std::string {
     const char* env = std::getenv("NATS_URL");
     return env != nullptr ? env : "nats://localhost:4222";
@@ -93,7 +116,9 @@ int main() {
   }();
 
   std::cout << projectnestor::kProjectName << " v" << projectnestor::kVersion << "\n";
-  std::cout << "Starting HTTP server on " << host << ":" << port << "\n";
+
+  const std::string scheme = tls->enabled ? "https" : "http";
+  std::cout << "Starting " << scheme << " server on " << host << ":" << port << "\n";
 
   // ── Rate limiter ─────────────────────────────────────────────────────────
   // Read config from environment before connecting NATS so we can log early.
@@ -112,6 +137,8 @@ int main() {
     std::cout << "[main] NATS unreachable at startup — retrying in background.\n";
   }
 
+  // Construct the rate limiter on main()'s stack BEFORE the TLS/plain branch so
+  // both server instantiations can capture it (it outlives server.listen()).
   if (rl_cfg.disabled) {
     // Fail-loud: emit ERROR to stderr AND publish a NATS audit event so the
     // disable flag is visible in central log aggregation (ADR-005).
@@ -133,24 +160,50 @@ int main() {
   // until shutdown. Pointer captured by route lambdas (never dangling).
   projectnestor::RateLimiter limiter{rl_cfg};
 
-  httplib::Server server;
-  g_server = &server;
+  // ── Server instantiation (TLS branch) ────────────────────────────────────
+  if (tls->enabled) {
+    httplib::SSLServer server(tls->cert_path.c_str(), tls->key_path.c_str());
+    if (!server.is_valid()) {
+      std::cerr << "[main] TLS server init failed; check cert/key paths.\n";
+      return 1;
+    }
+    // Upcast: g_server is httplib::Server* — stop() is safe through base ptr.
+    g_server = &server;
 
-  server.set_payload_max_length(1 * 1024 * 1024);  // 1 MiB
-  server.set_read_timeout(5, 0);
-  server.set_write_timeout(5, 0);
+    server.set_payload_max_length(1 * 1024 * 1024);  // 1 MiB
+    server.set_read_timeout(5, 0);
+    server.set_write_timeout(5, 0);
 
-  std::signal(SIGINT, signal_handler);
-  std::signal(SIGTERM, signal_handler);
+    std::signal(SIGINT, signal_handler);
+    std::signal(SIGTERM, signal_handler);
 
-  projectnestor::install_auth_middleware(server, *auth_cfg);
-  projectnestor::register_routes(server, store, nats, limiter);
+    projectnestor::install_auth_middleware(server, *auth_cfg);
+    projectnestor::register_routes(server, store, nats, limiter);
 
-  std::cout << "Routes registered. Listening...\n";
-  if (!server.listen(host, port)) {
-    std::cerr << "Failed to start server on port " << port << "\n";
-    return 1;
+    std::cout << "Routes registered. Listening...\n";
+    if (!server.listen(host, port)) {
+      std::cerr << "Failed to start server on port " << port << "\n";
+      return 1;
+    }
+  } else {
+    httplib::Server server;
+    g_server = &server;
+
+    server.set_payload_max_length(1 * 1024 * 1024);  // 1 MiB
+    server.set_read_timeout(5, 0);
+    server.set_write_timeout(5, 0);
+
+    std::signal(SIGINT, signal_handler);
+    std::signal(SIGTERM, signal_handler);
+
+    projectnestor::install_auth_middleware(server, *auth_cfg);
+    projectnestor::register_routes(server, store, nats, limiter);
+
+    std::cout << "Routes registered. Listening...\n";
+    if (!server.listen(host, port)) {
+      std::cerr << "Failed to start server on port " << port << "\n";
+      return 1;
+    }
   }
-
   return 0;
 }

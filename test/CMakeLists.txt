@@ -12,6 +12,9 @@ add_executable(${PROJECT_NAME}_tests
   src/test_auth.cpp
   src/test_trace_context.cpp
   src/test_rate_limiter.cpp
+  src/test_tls_config.cpp
+  src/test_security_warnings.cpp
+  src/test_server_tls.cpp
 )
 
 target_compile_features(${PROJECT_NAME}_tests PRIVATE cxx_std_20)
