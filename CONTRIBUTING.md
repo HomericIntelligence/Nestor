@@ -50,6 +50,20 @@ just test
 pre-commit install
 ```
 
+### Toolchain Lock File
+
+`pixi.lock` is committed to ensure every contributor and CI run resolves to
+the same exact versions of cmake, ninja, clang-tools, gcovr, and pre-commit.
+The `>=` constraints in `pixi.toml` only bound upgrades; day-to-day installs
+must use the lock.
+
+- Use `pixi install --locked` (CI's mode) to install without resolving.
+  (`pixi shell` also respects the lock; `pixi install --locked` skips
+  environment activation and is CI's mode.)
+- After editing `pixi.toml`, run `pixi lock` and commit the updated
+  `pixi.lock` in the same PR. CI's `pixi-check` job fails if the lock is
+  stale or missing.
+
 ### Verify Your Setup
 
 ```bash
