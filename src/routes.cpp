@@ -73,18 +73,18 @@ void register_routes(httplib::Server& server, Store& store, NatsClient& nats, Au
     std::size_t limit = 20;
     if (req.has_param("offset")) {
       try {
-        const int v = std::stoi(req.get_param_value("offset"));
-        if (v >= 0) {
-          offset = static_cast<std::size_t>(v);
+        const int offset_val = std::stoi(req.get_param_value("offset"));
+        if (offset_val >= 0) {
+          offset = static_cast<std::size_t>(offset_val);
         }
       } catch (...) {
       }
     }
     if (req.has_param("limit")) {
       try {
-        const int v = std::stoi(req.get_param_value("limit"));
-        if (v > 0 && v <= 100) {
-          limit = static_cast<std::size_t>(v);
+        const int limit_val = std::stoi(req.get_param_value("limit"));
+        if (limit_val > 0 && limit_val <= 100) {
+          limit = static_cast<std::size_t>(limit_val);
         }
       } catch (...) {
       }
@@ -120,8 +120,8 @@ void register_routes(httplib::Server& server, Store& store, NatsClient& nats, Au
       return;
     }
 
-    const std::string id = req.path_params.at("id");
-    const json item = sp->get(id);
+    const std::string research_id = req.path_params.at("id");
+    const json item = sp->get(research_id);
     if (item.contains("error")) {
       res.status = 404;
     }
@@ -150,8 +150,8 @@ void register_routes(httplib::Server& server, Store& store, NatsClient& nats, Au
     // Reject anything that doesn't declare a JSON content-type.
     // Per RFC 9110 §8.3 the media-type may carry parameters
     // (e.g. "; charset=utf-8"), so match by substring not equality.
-    const std::string ct = req.get_header_value("Content-Type");
-    if (ct.find("application/json") == std::string::npos) {
+    const std::string content_type = req.get_header_value("Content-Type");
+    if (content_type.find("application/json") == std::string::npos) {
       res.status = 415;
       res.set_content(json{{"detail", "Content-Type must be application/json"}}.dump(),
                       "application/json");
@@ -172,13 +172,13 @@ void register_routes(httplib::Server& server, Store& store, NatsClient& nats, Au
     }
 
     const json result = sp->submit_research(body);
-    const std::string id = result["id"].get<std::string>();
+    const std::string research_id = result["id"].get<std::string>();
     const std::string topic = extract_topic(body);
 
-    // Publish to hi.research.<id> — graceful degradation if NATS unavailable.
-    const std::string subject = "hi.research." + id;
+    // Publish to hi.research.<research_id> — graceful degradation if NATS unavailable.
+    const std::string subject = "hi.research." + research_id;
     json payload = body;
-    payload["id"] = id;
+    payload["id"] = research_id;
     payload["status"] = "pending";
     payload["correlation_id"] = cid;
     np->publish(subject, payload.dump());
@@ -187,7 +187,7 @@ void register_routes(httplib::Server& server, Store& store, NatsClient& nats, Au
     // Issue #49: include correlation_id in log metadata.
     np->publish_log("hi.logs.nestor.research_submitted", "info",
                     "Research submitted: topic=" + topic,
-                    json{{"research_id", id}, {"topic", topic}, {"correlation_id", cid}});
+                    json{{"research_id", research_id}, {"topic", topic}, {"correlation_id", cid}});
 
     res.status = 202;
     res.set_content(result.dump(), "application/json");
@@ -205,7 +205,7 @@ void register_routes(httplib::Server& server, Store& store, NatsClient& nats, Au
           return;
         }
 
-        const std::string id = req.path_params.at("id");
+        const std::string research_id = req.path_params.at("id");
 
         // Issue #67: Require a non-empty body with a "summary" field.
         if (req.body.size() > kMaxBodyBytes) {
@@ -218,8 +218,8 @@ void register_routes(httplib::Server& server, Store& store, NatsClient& nats, Au
         // Parse body for completion metadata.
         json completion_body = json::object();
         if (!req.body.empty()) {
-          const std::string ct = req.get_header_value("Content-Type");
-          if (ct.find("application/json") == std::string::npos) {
+          const std::string content_type = req.get_header_value("Content-Type");
+          if (content_type.find("application/json") == std::string::npos) {
             res.status = 415;
             res.set_content(json{{"detail", "Content-Type must be application/json"}}.dump(),
                             "application/json");
@@ -240,7 +240,7 @@ void register_routes(httplib::Server& server, Store& store, NatsClient& nats, Au
           return;
         }
 
-        const json updated = sp->complete_research(id);
+        const json updated = sp->complete_research(research_id);
 
         if (updated.contains("error")) {
           res.status = 404;
@@ -251,9 +251,9 @@ void register_routes(httplib::Server& server, Store& store, NatsClient& nats, Au
         const std::string topic = extract_topic(updated);
 
         // Structured log: hi.logs.nestor.research_completed (ADR-005).
-        np->publish_log("hi.logs.nestor.research_completed", "info",
-                        "Research completed: topic=" + topic,
-                        json{{"research_id", id}, {"topic", topic}, {"correlation_id", cid}});
+        np->publish_log(
+            "hi.logs.nestor.research_completed", "info", "Research completed: topic=" + topic,
+            json{{"research_id", research_id}, {"topic", topic}, {"correlation_id", cid}});
 
         res.set_content(updated.dump(), "application/json");
       });

@@ -14,19 +14,19 @@ namespace projectnestor {
 namespace {
 
 // Constant-time string comparison to prevent timing-oracle attacks.
-// Returns true if a == b. Both strings are always fully traversed.
-bool constant_time_equal(std::string_view a, std::string_view b) noexcept {
-  if (a.size() != b.size()) {
-    // Still do a dummy loop over 'a' to keep timing uniform across callers.
-    volatile unsigned char dummy = 0;
-    for (char c : a) {
+// Returns true if lhs == rhs. Both strings are always fully traversed.
+bool constant_time_equal(std::string_view lhs, std::string_view rhs) noexcept {
+  if (lhs.size() != rhs.size()) {
+    // Still do a dummy loop over lhs to keep timing uniform across callers.
+    volatile unsigned char dummy{0};
+    for (char c : lhs) {
       dummy |= static_cast<unsigned char>(c);
     }
     return false;
   }
   volatile unsigned char diff = 0;
-  for (std::size_t i = 0; i < a.size(); ++i) {
-    diff |= static_cast<unsigned char>(a[i]) ^ static_cast<unsigned char>(b[i]);
+  for (std::size_t i = 0; i < lhs.size(); ++i) {
+    diff |= static_cast<unsigned char>(lhs[i]) ^ static_cast<unsigned char>(rhs[i]);
   }
   return diff == 0;
 }
