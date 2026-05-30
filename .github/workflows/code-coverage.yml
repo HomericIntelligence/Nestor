@@ -35,12 +35,14 @@ jobs:
         # wording or when the regex tripped over locale-formatted floats.
         run: |
           set -euo pipefail
+          # Issue #29: Removed --exclude src/nats_client.cpp. The exclusion was
+          # added because NatsClient had no unit tests; nats_client.cpp is now
+          # covered by test_nats_client.cpp.
           gcovr \
             --root . \
             --filter include \
             --filter src \
             --exclude src/server_main.cpp \
-            --exclude src/nats_client.cpp \
             --fail-under-line 80 \
             build/coverage
 

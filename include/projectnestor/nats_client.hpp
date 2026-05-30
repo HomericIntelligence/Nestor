@@ -1,4 +1,10 @@
 #pragma once
+// Issue #18: Replace void* C-handle members with typed RAII ownership.
+// nats.h uses C typedefs (typedef struct __natsConnection natsConnection) which
+// conflict with C++ forward declarations. We use a Pimpl to keep nats.h out of
+// this public header entirely — callers no longer need nats.h in scope.
+
+#include <memory>
 #include <string>
 
 #include "nlohmann/json.hpp"
@@ -9,6 +15,12 @@ class NatsClient {
  public:
   explicit NatsClient(const std::string& url);
   ~NatsClient();
+
+  // Non-copyable, non-movable (owns C-library resources).
+  NatsClient(const NatsClient&) = delete;
+  NatsClient& operator=(const NatsClient&) = delete;
+  NatsClient(NatsClient&&) = delete;
+  NatsClient& operator=(NatsClient&&) = delete;
 
   // Returns true if connection succeeded.
   bool connect();
@@ -27,10 +39,11 @@ class NatsClient {
                    const nlohmann::json& metadata);
 
  private:
-  std::string url_;
-  void* conn_ = nullptr;
-  void* js_ = nullptr;
-  bool connected_ = false;
+  // Pimpl: keeps nats.h (and its C typedefs) out of the public header.
+  // Issue #18: typed natsConnection* and jsCtx* live in the Impl struct defined
+  // in nats_client.cpp, eliminating void* + reinterpret_cast at call sites.
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
 };
 
 }  // namespace projectnestor

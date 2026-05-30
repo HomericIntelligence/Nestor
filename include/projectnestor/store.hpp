@@ -26,6 +26,16 @@ class Store {
   json get_stats() const;
   json submit_research(const json& body);
 
+  // Retrieve a single research item by ID. Returns the item JSON, or a JSON
+  // object with {"error": "not_found"} if the id is unknown.
+  // Issue #64: adds GET /v1/research/:id endpoint.
+  [[nodiscard]] json get(const std::string& id) const;
+
+  // List research items with pagination.
+  // Returns {"items": [...], "total": N, "offset": O, "limit": L}.
+  // Issue #64: adds GET /v1/research endpoint.
+  [[nodiscard]] json list(std::size_t offset, std::size_t limit) const;
+
   // Mark a research task as completed.  Returns the updated item, or a JSON
   // object with {"error": "not_found"} if the id is unknown.
   json complete_research(const std::string& id);

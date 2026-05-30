@@ -1,8 +1,22 @@
+# Issue #39: Replace hardcoded compiler/arch values with environment-variable
+# overrides so the same profile works on ARM, macOS-clang, and other
+# configurations. Existing CI invocations (conan install . --profile=conan/profiles/default)
+# continue to work unchanged; the defaults preserve the previous behaviour.
+#
+# Override examples:
+#   CONAN_COMPILER=clang CONAN_COMPILER_VERSION=18 conan install . --profile=...
+#   CONAN_ARCH=armv8 conan install . --profile=...
+
+{% set compiler = os.environ.get("CONAN_COMPILER", "gcc") %}
+{% set compiler_version = os.environ.get("CONAN_COMPILER_VERSION", "14") %}
+{% set arch = os.environ.get("CONAN_ARCH", "x86_64") %}
+{% set libcxx = os.environ.get("CONAN_LIBCXX", "libstdc++11") %}
+
 [settings]
 os=Linux
-compiler=gcc
-compiler.version=14
-compiler.libcxx=libstdc++11
+compiler={{ compiler }}
+compiler.version={{ compiler_version }}
+compiler.libcxx={{ libcxx }}
 compiler.cppstd=20
 build_type=Release
-arch=x86_64
+arch={{ arch }}

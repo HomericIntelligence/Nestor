@@ -96,6 +96,34 @@ json Store::submit_research(const json& body) {
   return json{{"id", id}, {"status", "pending"}};
 }
 
+json Store::get(const std::string& id) const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto it = research_items_.find(id);
+  if (it == research_items_.end()) {
+    return json{{"error", "not_found"}};
+  }
+  return it->second;
+}
+
+json Store::list(std::size_t offset, std::size_t limit) const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  json items = json::array();
+  const std::size_t total = insertion_order_.size();
+  const std::size_t end = std::min(offset + limit, total);
+  for (std::size_t i = offset; i < end; ++i) {
+    auto it = research_items_.find(insertion_order_[i]);
+    if (it != research_items_.end()) {
+      items.push_back(it->second);
+    }
+  }
+  return json{
+      {"items", items},
+      {"total", static_cast<int>(total)},
+      {"offset", static_cast<int>(offset)},
+      {"limit", static_cast<int>(limit)},
+  };
+}
+
 json Store::complete_research(const std::string& id) {
   std::lock_guard<std::mutex> lock(mutex_);
   auto it = research_items_.find(id);

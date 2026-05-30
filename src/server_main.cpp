@@ -1,6 +1,8 @@
 // ProjectNestor HTTP Server — C++20
 
+#include "projectnestor/auth_middleware.hpp"
 #include "projectnestor/nats_client.hpp"
+#include "projectnestor/rate_limiter.hpp"
 #include "projectnestor/routes.hpp"
 #include "projectnestor/store.hpp"
 #include "projectnestor/version.hpp"
@@ -65,13 +67,18 @@ int main() {
     nats.ensure_streams();
   }
 
+  // Issue #40/#65: Auth middleware — reads NESTOR_AUTH_TOKEN env-var.
+  projectnestor::AuthMiddleware auth;
+  // Issue #44: Rate limiter — reads NESTOR_RATE_LIMIT_RPS env-var (default: 100).
+  projectnestor::RateLimiter rate;
+
   httplib::Server server;
   g_server = &server;
 
   std::signal(SIGINT, signal_handler);
   std::signal(SIGTERM, signal_handler);
 
-  projectnestor::register_routes(server, store, nats);
+  projectnestor::register_routes(server, store, nats, auth, rate);
 
   std::cout << "Routes registered. Listening...\n";
   if (!server.listen(host, port)) {

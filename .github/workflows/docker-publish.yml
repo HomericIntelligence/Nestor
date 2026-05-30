@@ -10,6 +10,7 @@ on:
 permissions:
   contents: read
   packages: write
+  security-events: write  # Required for Trivy SARIF upload
 
 jobs:
   build:
@@ -39,6 +40,7 @@ jobs:
             type=sha,prefix=sha-,format=short
 
       - name: Build and (conditionally) push
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -46,3 +48,46 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          load: true  # Always load into local daemon for scan + smoke test
+
+      # Issue #59: Trivy image scan — fail on HIGH/CRITICAL vulnerabilities.
+      # Runs on both PRs and push so image quality is gated before publish.
+      # image-ref comes from the action's own output (not user input), so it is
+      # not a command-injection vector.
+      - name: Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ steps.build.outputs.imageid }}
+          format: table
+          exit-code: "1"
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+
+      # Issue #59: Container smoke test — verify /v1/health returns 200.
+      # IMAGE_ID comes from docker/build-push-action output (the content-addressable
+      # sha256 digest), not from any user-controlled input.
+      # NESTOR_AUTH_TOKEN is a fixed test value — never a secret at this step.
+      - name: Container smoke test
+        env:
+          IMAGE_ID: ${{ steps.build.outputs.imageid }}
+        run: |
+          docker run --rm -d \
+            --name nestor-smoke \
+            -p 18081:8081 \
+            -e NESTOR_AUTH_TOKEN=smoke-test-token \
+            -e NATS_URL=nats://localhost:1 \
+            "$IMAGE_ID"
+          # Wait up to 10 s for the server to start.
+          for i in $(seq 1 10); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:18081/v1/health || true)
+            if [ "$STATUS" = "200" ]; then
+              echo "Smoke test passed: /v1/health returned 200"
+              docker stop nestor-smoke
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Smoke test FAILED: /v1/health did not return 200 within 10 seconds"
+          docker logs nestor-smoke || true
+          docker stop nestor-smoke || true
+          exit 1

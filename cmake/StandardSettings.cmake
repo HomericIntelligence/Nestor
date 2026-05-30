@@ -9,3 +9,11 @@ if(${PROJECT_NAME}_ENABLE_COVERAGE)
   add_compile_options(-O0 --coverage)
   add_link_options(--coverage)
 endif()
+
+# Issue #22/#43: Wire the ENABLE_SANITIZERS option to actual compiler flags.
+# Previously the option was declared but never applied, making ASAN/UBSAN a no-op.
+if(${PROJECT_NAME}_ENABLE_SANITIZERS)
+  message(STATUS "Sanitizers enabled: address,undefined")
+  add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
+  add_link_options(-fsanitize=address,undefined)
+endif()

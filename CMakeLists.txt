@@ -60,6 +60,10 @@ add_library(${PROJECT_NAME}_core STATIC
   src/store.cpp
   src/routes.cpp
   src/nats_client.cpp
+  src/auth_middleware.cpp
+  src/request_limits.cpp
+  src/rate_limiter.cpp
+  src/correlation_id.cpp
 )
 add_library(${PROJECT_NAME}::core ALIAS ${PROJECT_NAME}_core)
 
