@@ -1,8 +1,8 @@
 #pragma once
 #include <string>
 
-#include "nlohmann/json.hpp"
 #include "nats.h"
+#include "nlohmann/json.hpp"
 
 namespace projectnestor {
 

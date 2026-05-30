@@ -92,8 +92,8 @@ bool NatsClient::publish(const std::string& subject, const std::string& payload)
 
   jsPubAck* ack = nullptr;
   jsErrCode jerr = static_cast<jsErrCode>(0);
-  const natsStatus s = js_Publish(&ack, js_, subject.c_str(),
-                                  payload.data(), static_cast<int>(payload.size()), nullptr, &jerr);
+  const natsStatus s = js_Publish(&ack, js_, subject.c_str(), payload.data(),
+                                  static_cast<int>(payload.size()), nullptr, &jerr);
 
   if (ack != nullptr) {
     jsPubAck_Destroy(ack);
@@ -127,8 +127,7 @@ void NatsClient::publish_log(const std::string& subject, const std::string& leve
   // Return value intentionally ignored — log publish failures are non-fatal.
   // The explicit (void) cast satisfies static analysers (cert-err33-c,
   // bugprone-unused-return-value) and documents the intent at the call site.
-  (void)natsConnection_PublishString(conn_, subject.c_str(),
-                                     payload_str.c_str());
+  (void)natsConnection_PublishString(conn_, subject.c_str(), payload_str.c_str());
 }
 
 }  // namespace projectnestor
