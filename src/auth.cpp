@@ -42,8 +42,8 @@ std::optional<AuthConfig> load_auth_config_from_env() {
 }
 
 void install_auth_middleware(httplib::Server& server, const AuthConfig& cfg) {
-  server.set_pre_routing_handler([cfg](const httplib::Request& req, httplib::Response& res)
-                                     -> httplib::Server::HandlerResponse {
+  server.set_pre_routing_handler([cfg](const httplib::Request& req,
+                                       httplib::Response& res) -> httplib::Server::HandlerResponse {
     // If auth mode is None, all requests are allowed.
     if (cfg.mode == AuthMode::None) {
       return httplib::Server::HandlerResponse::Unhandled;

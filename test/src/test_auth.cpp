@@ -153,7 +153,8 @@ TEST_F(AuthTest, CorrectBearerTokenOnPostResearchReturns202) {
 TEST_F(AuthTest, CorrectBearerTokenOnCompleteReturns404) {
   // Expect 404 because the ID doesn't exist, not 401.
   httplib::Headers headers{{"Authorization", "Bearer test-token"}};
-  const auto res = client_->Post("/v1/research/nonexistent-id/complete", headers, "{}", "application/json");
+  const auto res =
+      client_->Post("/v1/research/nonexistent-id/complete", headers, "{}", "application/json");
   ASSERT_TRUE(res);
   EXPECT_EQ(res->status, 404);
 }
@@ -254,7 +255,8 @@ TEST_F(AuthConfigTest, ConfigLoad_RequiredModeWithTokenReturnsConfig) {
 
 TEST_F(AuthConfigTest, NoTokenInLogsStaticCheck) {
   // Read auth.cpp and verify it doesn't log the token.
-  std::ifstream auth_file("/home/mvillmow/Projects/ProjectNestor/build/.worktrees/issue-40/src/auth.cpp");
+  std::ifstream auth_file(
+      "/home/mvillmow/Projects/ProjectNestor/build/.worktrees/issue-40/src/auth.cpp");
   ASSERT_TRUE(auth_file.is_open()) << "Cannot open src/auth.cpp for verification";
 
   std::string line;
@@ -265,10 +267,10 @@ TEST_F(AuthConfigTest, NoTokenInLogsStaticCheck) {
   while (std::getline(auth_file, line)) {
     ++line_num;
     // Check for log-emitting symbols with token-related identifiers in same line
-    bool has_log_call = (line.find("std::cout") != std::string::npos ||
-                        line.find("std::cerr") != std::string::npos ||
-                        line.find("printf") != std::string::npos ||
-                        line.find("fmt::print") != std::string::npos);
+    bool has_log_call =
+        (line.find("std::cout") != std::string::npos ||
+         line.find("std::cerr") != std::string::npos || line.find("printf") != std::string::npos ||
+         line.find("fmt::print") != std::string::npos);
     bool has_token_ref = (line.find("token") != std::string::npos);
 
     if (has_log_call && has_token_ref) {

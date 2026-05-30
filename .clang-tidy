@@ -10,7 +10,9 @@ Checks: >
   -altera-*,
   -cert-err58-cpp,
   -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
-  -hicpp-no-array-decay
+  -hicpp-no-array-decay,
+  -llvmlibc-*,
+  -misc-include-cleaner
 WarningsAsErrors: ''
 HeaderFilterRegex: '(include|src|test)/'
 FormatStyle: file

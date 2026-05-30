@@ -107,7 +107,8 @@ TEST_F(RoutesTest, StatsReflectsSubmission) {
 TEST_F(RoutesTest, CompleteResearchReturns200) {
   // Submit first to get a valid id.
   const std::string payload = R"({"idea":"test idea","context":"ctx"})";
-  const auto submit_res = client_->Post("/v1/research", auth_headers(), payload, "application/json");
+  const auto submit_res =
+      client_->Post("/v1/research", auth_headers(), payload, "application/json");
   ASSERT_TRUE(submit_res);
   ASSERT_EQ(submit_res->status, 202);
   const std::string id = json::parse(submit_res->body)["id"].get<std::string>();
@@ -123,7 +124,8 @@ TEST_F(RoutesTest, CompleteResearchReturns200) {
 }
 
 TEST_F(RoutesTest, CompleteResearchUnknownIdReturns404) {
-  const auto res = client_->Post("/v1/research/nonexistent-id/complete", auth_headers(), "", "application/json");
+  const auto res =
+      client_->Post("/v1/research/nonexistent-id/complete", auth_headers(), "", "application/json");
   ASSERT_TRUE(res);
   EXPECT_EQ(res->status, 404);
   const auto body = json::parse(res->body);
@@ -132,7 +134,8 @@ TEST_F(RoutesTest, CompleteResearchUnknownIdReturns404) {
 
 TEST_F(RoutesTest, StatsReflectsCompletion) {
   const std::string payload = R"({"idea":"test","context":"ctx"})";
-  const auto submit_res = client_->Post("/v1/research", auth_headers(), payload, "application/json");
+  const auto submit_res =
+      client_->Post("/v1/research", auth_headers(), payload, "application/json");
   ASSERT_TRUE(submit_res);
   const std::string id = json::parse(submit_res->body)["id"].get<std::string>();
 

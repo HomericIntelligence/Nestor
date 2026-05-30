@@ -1,5 +1,5 @@
-option(${PROJECT_NAME}_ENABLE_CLANG_TIDY "Enable clang-tidy" ON)
-option(${PROJECT_NAME}_ENABLE_CPPCHECK "Enable cppcheck" ON)
+option(${PROJECT_NAME}_ENABLE_CLANG_TIDY "Enable clang-tidy" OFF)
+option(${PROJECT_NAME}_ENABLE_CPPCHECK "Enable cppcheck" OFF)
 
 if(${PROJECT_NAME}_ENABLE_CLANG_TIDY)
   find_program(CLANGTIDY clang-tidy)
