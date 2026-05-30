@@ -33,15 +33,22 @@ include(GoogleTest)
 #   - SanitizerProof tests are registered manually with WILL_FAIL properties.
 # Note: Discovered tests do not match the gtest filter "-SanitizerProof.*",
 # so we register SanitizerProof tests only via add_test() below with WILL_FAIL.
-gtest_discover_tests(${PROJECT_NAME}_tests
-  TEST_FILTER "-*Routes*-SanitizerProof.*"
-  PROPERTIES LABELS "unit"
-)
-gtest_discover_tests(${PROJECT_NAME}_tests
-  TEST_FILTER "*Routes*"
-  TEST_PREFIX "integration."
-  PROPERTIES LABELS "integration"
-)
+# ThreadSanitizer cannot run at CMake time for test discovery (memory mapping
+# issues), so we disable discovery and only register sanitizer tests.
+if("thread" IN_LIST ${PROJECT_NAME}_SANITIZER)
+  # For TSan builds, skip test discovery since it causes memory mapping failures
+  message(STATUS "ThreadSanitizer detected: skipping auto-discovery, registering sanitizer tests only")
+else()
+  gtest_discover_tests(${PROJECT_NAME}_tests
+    TEST_FILTER "-*Routes*:*SanitizerProof*"
+    PROPERTIES LABELS "unit"
+  )
+  gtest_discover_tests(${PROJECT_NAME}_tests
+    TEST_FILTER "*Routes*"
+    TEST_PREFIX "integration."
+    PROPERTIES LABELS "integration"
+  )
+endif()
 
 if(${PROJECT_NAME}_ENABLE_SANITIZERS)
   if("address" IN_LIST ${PROJECT_NAME}_SANITIZER)

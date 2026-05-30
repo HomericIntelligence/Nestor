@@ -1,7 +1,8 @@
-#include <gtest/gtest.h>
+#include <atomic>
 #include <cstdint>
 #include <thread>
-#include <atomic>
+
+#include <gtest/gtest.h>
 
 namespace ProjectNestor {
 
@@ -43,4 +44,4 @@ TEST_F(SanitizerProof, DataRace) {
 #endif
 }
 
-} // namespace ProjectNestor
+}  // namespace ProjectNestor
