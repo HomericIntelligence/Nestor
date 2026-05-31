@@ -55,7 +55,7 @@ jobs:
       # image-ref comes from the action's own output (not user input), so it is
       # not a command-injection vector.
       - name: Trivy vulnerability scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ steps.build.outputs.imageid }}
           format: table
@@ -79,7 +79,7 @@ jobs:
             "$IMAGE_ID"
           # Wait up to 10 s for the server to start.
           for i in $(seq 1 10); do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:18081/v1/health || true)
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:18081/v1/health 2>/dev/null)
             if [ "$STATUS" = "200" ]; then
               echo "Smoke test passed: /v1/health returned 200"
               docker stop nestor-smoke
@@ -88,6 +88,6 @@ jobs:
             sleep 1
           done
           echo "Smoke test FAILED: /v1/health did not return 200 within 10 seconds"
-          docker logs nestor-smoke || true
-          docker stop nestor-smoke || true
+          docker logs nestor-smoke 2>/dev/null
+          docker stop nestor-smoke 2>/dev/null
           exit 1
