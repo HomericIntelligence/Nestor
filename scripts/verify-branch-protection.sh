@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Verify that main branch protection matches the HomericIntelligence ecosystem standard.
+# Verify that main branch protection is correctly configured.
 #
 # This reads the *effective* branch rules via the
 # `GET /repos/{owner}/{repo}/rules/branches/{branch}` endpoint, which is
@@ -8,11 +8,6 @@
 # admin-scoped token the default GITHUB_TOKEN cannot obtain (resulting in a
 # hard 403 "Resource not accessible by integration" on every PR). The rules
 # endpoint exposes the same enforced invariants without needing admin scope.
-#
-# The asserted invariants match the ecosystem standard shared by all
-# HomericIntelligence repos (Agamemnon, Keystone, Hermes, Scylla, Odysseus,
-# Argus, Hephaestus, Myrmidons): PRs required, 0 required approvals,
-# conversation-thread resolution required, required status checks enforced.
 set -euo pipefail
 
 REPO="HomericIntelligence/ProjectNestor"
@@ -35,17 +30,15 @@ if [ -z "$pr_params" ]; then
   exit 1
 fi
 
-# Ecosystem standard: 0 required approvals. Assert the field is present and
-# exactly 0 so drift in either direction (a stray required reviewer, or the
-# rule being dropped) is caught.
-if ! jq -e '.required_approving_review_count == 0' <<<"$pr_params" >/dev/null 2>&1; then
-  echo "ERROR: required_approving_review_count must be 0 (ecosystem standard)"
+# Check required_approving_review_count >= 1
+if ! jq -e '.required_approving_review_count >= 1' <<<"$pr_params" >/dev/null 2>&1; then
+  echo "ERROR: required_approving_review_count must be >= 1"
   exit 1
 fi
 
-# Ecosystem standard: conversation threads must be resolved before merge.
-if ! jq -e '.required_review_thread_resolution == true' <<<"$pr_params" >/dev/null 2>&1; then
-  echo "ERROR: required_review_thread_resolution must be true"
+# Check stale reviews are dismissed on push.
+if ! jq -e '.dismiss_stale_reviews_on_push == true' <<<"$pr_params" >/dev/null 2>&1; then
+  echo "ERROR: dismiss_stale_reviews_on_push must be true"
   exit 1
 fi
 
