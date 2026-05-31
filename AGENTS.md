@@ -44,7 +44,7 @@ When research is completed Nestor emits
 ## Agent role boundaries
 
 | Agent | Owns | Reads from Nestor |
-|---|---|---|
+| --- | --- | --- |
 | ProjectAgamemnon | planning, dispatch | `hi.research.*` |
 | ProjectArgus | observability | `hi.logs.nestor.*` |
 | ProjectHermes | NATS event bridge | all `hi.*` |

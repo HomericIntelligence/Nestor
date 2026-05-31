@@ -55,14 +55,14 @@ NATS at `nats://127.0.0.1:4222`.
 ## Environment variables
 
 | Variable | Default | Description |
-|---|---|---|
+| --- | --- | --- |
 | `NESTOR_PORT` | `8080` | HTTP server port |
 | `NATS_URL` | `nats://127.0.0.1:4222` | NATS broker URL for event publication |
 
 ## API
 
 | Method | Path | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `GET` | `/v1/health` | Liveness probe; returns `{"status":"ok"}` |
 | `GET` | `/v1/research/stats` | In-memory store counters |
 | `POST` | `/v1/research` | Submit `{idea, context?}` JSON; returns `202` with `{id, status:"pending"}` |

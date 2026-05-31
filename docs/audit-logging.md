@@ -14,7 +14,7 @@ security-relevant events.
 ## Event taxonomy
 
 | Subject | Severity | Emitted when |
-|---|---|---|
+| --- | --- | --- |
 | `hi.logs.nestor.research_submitted` | info | `POST /v1/research` returns 202 |
 | `hi.logs.nestor.research_completed` | info | `POST /v1/research/:id/complete` returns 200 |
 | `hi.logs.nestor.research_invalid_input` | warn | `POST /v1/research` returns 400 or 415 |
