@@ -2,11 +2,12 @@
 
 #include "projectnestor/routes.hpp"
 
+#include "projectnestor/trace_context.hpp"
+
 #include <string>
 
 #include "httplib.h"
 #include "nlohmann/json.hpp"
-#include "projectnestor/trace_context.hpp"
 
 namespace projectnestor {
 

@@ -308,7 +308,8 @@ TEST_F(RoutesTest, CompleteResearchEchoesIncomingTraceIdInResponse) {
   httplib::Headers submit_headers = auth_headers();
   submit_headers.insert({"traceparent", traceparent_a});
 
-  const auto submit_res = client_->Post("/v1/research", submit_headers, payload, "application/json");
+  const auto submit_res =
+      client_->Post("/v1/research", submit_headers, payload, "application/json");
   ASSERT_TRUE(submit_res);
   const std::string id = json::parse(submit_res->body)["id"].get<std::string>();
 
@@ -317,7 +318,8 @@ TEST_F(RoutesTest, CompleteResearchEchoesIncomingTraceIdInResponse) {
   httplib::Headers complete_headers = auth_headers();
   complete_headers.insert({"traceparent", traceparent_b});
 
-  const auto complete_res = client_->Post("/v1/research/" + id + "/complete", complete_headers, "", "application/json");
+  const auto complete_res =
+      client_->Post("/v1/research/" + id + "/complete", complete_headers, "", "application/json");
   ASSERT_TRUE(complete_res);
 
   // Response should echo B (incoming caller's trace)

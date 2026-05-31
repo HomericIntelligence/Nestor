@@ -1,10 +1,10 @@
 #include "projectnestor/trace_context.hpp"
 
-#include <set>
 #include <regex>
+#include <set>
 
-#include <gtest/gtest.h>
 #include "httplib.h"
+#include <gtest/gtest.h>
 
 namespace projectnestor::test {
 
@@ -13,8 +13,7 @@ namespace projectnestor::test {
 TEST(TraceContextTest, ParsesValidTraceparent) {
   std::string trace_id, span_id;
   const bool ok = detail::parse_traceparent(
-      "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
-      trace_id, span_id);
+      "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01", trace_id, span_id);
   EXPECT_TRUE(ok);
   EXPECT_EQ(trace_id, "0af7651916cd43dd8448eb211c80319c");
   EXPECT_EQ(span_id, "b7ad6b7169203331");
@@ -23,49 +22,43 @@ TEST(TraceContextTest, ParsesValidTraceparent) {
 TEST(TraceContextTest, RejectsNonZeroVersionPrefix) {
   std::string trace_id, span_id;
   const bool ok = detail::parse_traceparent(
-      "01-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
-      trace_id, span_id);
+      "01-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01", trace_id, span_id);
   EXPECT_FALSE(ok);
 }
 
 TEST(TraceContextTest, RejectsMalformedLength) {
   std::string trace_id, span_id;
   // Missing closing part
-  const bool ok = detail::parse_traceparent(
-      "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331",
-      trace_id, span_id);
+  const bool ok = detail::parse_traceparent("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331",
+                                            trace_id, span_id);
   EXPECT_FALSE(ok);
 }
 
 TEST(TraceContextTest, RejectsAllZeroTraceId) {
   std::string trace_id, span_id;
   const bool ok = detail::parse_traceparent(
-      "00-00000000000000000000000000000000-b7ad6b7169203331-01",
-      trace_id, span_id);
+      "00-00000000000000000000000000000000-b7ad6b7169203331-01", trace_id, span_id);
   EXPECT_FALSE(ok);
 }
 
 TEST(TraceContextTest, RejectsAllZeroSpanId) {
   std::string trace_id, span_id;
   const bool ok = detail::parse_traceparent(
-      "00-0af7651916cd43dd8448eb211c80319c-0000000000000000-01",
-      trace_id, span_id);
+      "00-0af7651916cd43dd8448eb211c80319c-0000000000000000-01", trace_id, span_id);
   EXPECT_FALSE(ok);
 }
 
 TEST(TraceContextTest, RejectsUppercaseHex) {
   std::string trace_id, span_id;
   const bool ok = detail::parse_traceparent(
-      "00-0AF7651916CD43DD8448EB211C80319C-b7ad6b7169203331-01",
-      trace_id, span_id);
+      "00-0AF7651916CD43DD8448EB211C80319C-b7ad6b7169203331-01", trace_id, span_id);
   EXPECT_FALSE(ok);
 }
 
 TEST(TraceContextTest, RejectsInvalidHexCharacters) {
   std::string trace_id, span_id;
   const bool ok = detail::parse_traceparent(
-      "00-0af7651916cd43dd8448eb211c80319g-b7ad6b7169203331-01",
-      trace_id, span_id);
+      "00-0af7651916cd43dd8448eb211c80319g-b7ad6b7169203331-01", trace_id, span_id);
   EXPECT_FALSE(ok);
 }
 
