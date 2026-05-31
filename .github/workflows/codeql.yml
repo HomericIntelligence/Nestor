@@ -37,8 +37,8 @@ jobs:
             --output-folder build/debug
       - name: Build
         run: |
-          cmake --preset debug
-          cmake --build --preset debug
+          cmake --preset conan-debug
+          cmake --build --preset conan-debug
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v3
         with:

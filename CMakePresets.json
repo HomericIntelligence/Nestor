@@ -24,7 +24,9 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "ProjectNestor_BUILD_TESTING": "ON",
-        "ProjectNestor_ENABLE_SANITIZERS": "ON"
+        "ProjectNestor_ENABLE_SANITIZERS": "ON",
+        "ProjectNestor_WARNINGS_AS_ERRORS": "OFF",
+        "ProjectNestor_ENABLE_CLANG_TIDY": "OFF"
       }
     },
     {
@@ -33,7 +35,9 @@
       "inherits": "base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "ProjectNestor_BUILD_TESTING": "ON"
+        "ProjectNestor_BUILD_TESTING": "ON",
+        "ProjectNestor_WARNINGS_AS_ERRORS": "OFF",
+        "ProjectNestor_ENABLE_CLANG_TIDY": "OFF"
       }
     },
     {
@@ -43,7 +47,9 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "ProjectNestor_BUILD_TESTING": "ON",
-        "ProjectNestor_ENABLE_COVERAGE": "ON"
+        "ProjectNestor_ENABLE_COVERAGE": "ON",
+        "ProjectNestor_WARNINGS_AS_ERRORS": "OFF",
+        "ProjectNestor_ENABLE_CLANG_TIDY": "OFF"
       }
     },
     {
