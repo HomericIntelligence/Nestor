@@ -53,6 +53,16 @@
       }
     },
     {
+      "name": "conan-debug",
+      "displayName": "Conan Debug",
+      "inherits": "debug"
+    },
+    {
+      "name": "conan-release",
+      "displayName": "Conan Release",
+      "inherits": "release"
+    },
+    {
       "name": "ci",
       "displayName": "CI",
       "inherits": "release",
@@ -83,6 +93,14 @@
     {
       "name": "coverage",
       "configurePreset": "coverage"
+    },
+    {
+      "name": "conan-debug",
+      "configurePreset": "conan-debug"
+    },
+    {
+      "name": "conan-release",
+      "configurePreset": "conan-release"
     },
     {
       "name": "ci",
