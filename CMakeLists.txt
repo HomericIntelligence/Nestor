@@ -55,6 +55,16 @@ set(BUILD_TESTING        OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(natsc)
 set(BUILD_TESTING "${BUILD_TESTING_SAVED}" CACHE BOOL "" FORCE)
 
+# The vendored nats.c library trips UndefinedBehaviorSanitizer
+# (nonnull-attribute in glib_dispatch_pool.c) on code we do not own. With
+# -fno-sanitize-recover=all that aborts the test suite. Exclude the
+# third-party target from sanitizer instrumentation so our own code stays
+# strictly checked while the dependency is not. -fno-sanitize=all is honored
+# by both GCC and Clang (unlike -fsanitize-ignorelist, which is Clang-only).
+if(${PROJECT_NAME}_ENABLE_SANITIZERS AND TARGET nats_static)
+  target_compile_options(nats_static PRIVATE -fno-sanitize=all)
+endif()
+
 # ─── Testable Core Library (everything except main) ────────────────────────
 add_library(${PROJECT_NAME}_core STATIC
   src/store.cpp
