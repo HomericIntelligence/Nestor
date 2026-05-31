@@ -254,10 +254,12 @@ TEST_F(AuthConfigTest, ConfigLoad_RequiredModeWithTokenReturnsConfig) {
 // ── Test Group 6: No Token in Logs ────────────────────────────────────────
 
 TEST_F(AuthConfigTest, NoTokenInLogsStaticCheck) {
-  // Read auth.cpp and verify it doesn't log the token.
-  std::ifstream auth_file(
-      "/home/mvillmow/Projects/ProjectNestor/build/.worktrees/issue-40/src/auth.cpp");
-  ASSERT_TRUE(auth_file.is_open()) << "Cannot open src/auth.cpp for verification";
+  // Read auth.cpp and verify it doesn't log the token. The source directory is
+  // injected at compile time via PROJECTNESTOR_SOURCE_DIR so this works
+  // regardless of the build/checkout location (e.g. CI runners).
+  const std::string auth_path = std::string(PROJECTNESTOR_SOURCE_DIR) + "/src/auth.cpp";
+  std::ifstream auth_file(auth_path);
+  ASSERT_TRUE(auth_file.is_open()) << "Cannot open " << auth_path << " for verification";
 
   std::string line;
   int line_num = 0;

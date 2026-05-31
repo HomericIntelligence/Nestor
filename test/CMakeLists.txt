@@ -17,6 +17,12 @@ target_include_directories(${PROJECT_NAME}_tests PRIVATE
   ${gtest_INCLUDE_DIRS_RELEASE}
 )
 
+# Expose the repository source directory so tests that statically inspect
+# source files (e.g. the auth-token-logging guard) can locate them
+# regardless of where the build or checkout lives.
+target_compile_definitions(${PROJECT_NAME}_tests
+  PRIVATE PROJECTNESTOR_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+
 target_link_libraries(${PROJECT_NAME}_tests
   PRIVATE
     ${PROJECT_NAME}::${PROJECT_NAME}
