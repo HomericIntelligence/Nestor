@@ -9,3 +9,16 @@ if(${PROJECT_NAME}_ENABLE_COVERAGE)
   add_compile_options(-O0 --coverage)
   add_link_options(--coverage)
 endif()
+
+if(${PROJECT_NAME}_ENABLE_SANITIZERS)
+  message(STATUS "Sanitizers enabled: AddressSanitizer + UndefinedBehaviorSanitizer")
+  add_compile_options(
+    -fsanitize=address
+    -fsanitize=undefined
+    -fno-omit-frame-pointer
+    -fno-sanitize-recover=all
+    -g)
+  add_link_options(
+    -fsanitize=address
+    -fsanitize=undefined)
+endif()

@@ -191,7 +191,7 @@ just format
 - **Formatting**: clang-format v17 (enforced by pre-commit hook)
 - **Build generator**: Ninja via CMakePresets.json
 - **Dependencies**: Managed via CMake FetchContent (cpp-httplib, nlohmann_json, GoogleTest)
-- **Sanitizers**: Use ASAN/TSAN for debugging memory and threading issues
+- **Sanitizers**: `cmake --preset debug` enables ASAN + UBSAN automatically; use it for memory-safety and UB debugging.
 
 ## Pull Request Process
 
