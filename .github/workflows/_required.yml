@@ -208,6 +208,36 @@ jobs:
             ctest --output-on-failure
           fi
 
+  concurrency-tests:
+    name: concurrency-tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+      - name: Conan install (Release)
+        uses: ./.github/actions/conan-install
+        with:
+          build-type: Release
+      - name: Configure
+        run: cmake --preset release
+      - name: Build
+        run: cmake --build --preset release
+      - name: Run concurrency tests
+        # StoreConcurrencyTest suite validates Store locking under contention.
+        # These tests assert only at quiescence (all threads joined) to tolerate
+        # the known submit_research pending_ asymmetry (see issue #93).
+        # Run 5 consecutive repetitions to surface flaky locking bugs.
+        run: |
+          set -euo pipefail
+          for i in $(seq 5); do
+            echo "--- concurrency run $i/5 ---"
+            cd build/release && ctest --output-on-failure -L concurrency
+            cd ../..
+          done
+
   security-dependency-scan:
     name: security/dependency-scan
     runs-on: ubuntu-24.04
