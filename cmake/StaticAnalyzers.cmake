@@ -1,7 +1,7 @@
 option(${PROJECT_NAME}_ENABLE_CLANG_TIDY "Enable clang-tidy" ON)
 option(${PROJECT_NAME}_ENABLE_CPPCHECK "Enable cppcheck" ON)
 
-if(${PROJECT_NAME}_ENABLE_CLANG_TIDY)
+if(${PROJECT_NAME}_ENABLE_CLANG_TIDY AND NOT ("thread" IN_LIST ${PROJECT_NAME}_SANITIZER))
   find_program(CLANGTIDY clang-tidy)
   if(CLANGTIDY)
     set(CMAKE_CXX_CLANG_TIDY ${CLANGTIDY} --extra-arg=-Wno-unknown-warning-option)
