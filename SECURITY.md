@@ -109,6 +109,56 @@ When you report a vulnerability:
 - Social engineering attacks
 - Physical security
 
+## Authentication
+
+All endpoints under `/v1/*` require bearer-token authentication. No endpoint is exempt from this requirement.
+
+### Configuration
+
+Set two environment variables before starting the server:
+
+- **`NESTOR_AUTH_TOKEN`** — the bearer token (required in `required` mode)
+- **`NESTOR_AUTH_MODE`** — authentication mode: `"required"` or `"none"` (case-sensitive, lowercase only; defaults to `"required"`)
+
+### Mode Behavior
+
+| Mode      | Behavior                          |
+|-----------|-----------------------------------|
+| `required` | All `/v1/*` endpoints require a valid Bearer token. Server fails to start if token is missing or empty. |
+| `none`    | All endpoints are unauthenticated. Used only in test/dev harnesses with explicit opt-in. |
+
+### Error Response
+
+Requests without a valid Bearer token return **401 Unauthorized**:
+
+```json
+{"detail":"unauthorized"}
+```
+
+### Example
+
+```bash
+# Start the server with authentication enabled
+export NESTOR_AUTH_TOKEN="your-secret-token"
+export NESTOR_AUTH_MODE="required"
+./projectnestor_server
+
+# Unauthenticated request → 401
+curl http://localhost:8081/v1/health
+# {"detail":"unauthorized"}
+
+# Authenticated request → 200
+curl -H "Authorization: Bearer your-secret-token" http://localhost:8081/v1/health
+# {"status":"ok"}
+```
+
+### Token Security
+
+- Tokens are compared using constant-time comparison (`CRYPTO_memcmp`) to prevent timing attacks
+- Token values are **never logged** in stdout, stderr, or error messages
+- Empty strings are treated as unset tokens
+- Unknown or mixed-case mode strings cause startup failure (no silent fallback)
+
 ## Security Best Practices
 
 When contributing to ProjectNestor:

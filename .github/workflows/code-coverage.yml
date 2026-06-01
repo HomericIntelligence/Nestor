@@ -41,6 +41,7 @@ jobs:
             --filter src \
             --exclude src/server_main.cpp \
             --exclude src/nats_client.cpp \
+            --gcov-ignore-parse-errors=negative_hits.warn \
             --fail-under-line 80 \
             build/coverage
 

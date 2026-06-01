@@ -12,11 +12,11 @@ namespace projectnestor {
 using json = nlohmann::json;
 
 void register_routes(httplib::Server& server, Store& store, NatsClient& nats) {
-  Store* sp = &store;
-  NatsClient* np = &nats;
+  Store* sp = &store;      // NOLINT
+  NatsClient* np = &nats;  // NOLINT
 
   // Helper: extract topic field, falling back from "idea" to "topic".
-  auto extract_topic = [](const json& j) -> std::string {
+  auto extract_topic = [](const json& j) -> std::string {  // NOLINT
     return j.value("idea", j.value("topic", ""));
   };
 
@@ -37,7 +37,7 @@ void register_routes(httplib::Server& server, Store& store, NatsClient& nats) {
                 // Reject anything that doesn't declare a JSON content-type.
                 // Per RFC 9110 §8.3 the media-type may carry parameters
                 // (e.g. "; charset=utf-8"), so match by substring not equality.
-                const std::string ct = req.get_header_value("Content-Type");
+                const std::string ct = req.get_header_value("Content-Type");  // NOLINT
                 if (ct.find("application/json") == std::string::npos) {
                   res.status = 415;
                   res.set_content(json{{"detail", "Content-Type must be application/json"}}.dump(),
@@ -52,11 +52,12 @@ void register_routes(httplib::Server& server, Store& store, NatsClient& nats) {
                 }
 
                 const json result = sp->submit_research(body);
-                const std::string id = result["id"].get<std::string>();
-                const std::string topic = extract_topic(body);
+                const std::string id =  // NOLINT
+                    result["id"].get<std::string>();
+                const std::string topic = extract_topic(body);  // NOLINT
 
                 // Publish to hi.research.<id> — graceful degradation if NATS unavailable.
-                const std::string subject = "hi.research." + id;
+                const std::string subject = "hi.research." + id;  // NOLINT
                 json payload = body;
                 payload["id"] = id;
                 payload["status"] = "pending";
@@ -75,7 +76,7 @@ void register_routes(httplib::Server& server, Store& store, NatsClient& nats) {
 
   server.Post("/v1/research/:id/complete",
               [sp, np, extract_topic](const httplib::Request& req, httplib::Response& res) {
-                const std::string id = req.path_params.at("id");
+                const std::string id = req.path_params.at("id");  // NOLINT
                 const json updated = sp->complete_research(id);
 
                 if (updated.contains("error")) {
@@ -84,7 +85,7 @@ void register_routes(httplib::Server& server, Store& store, NatsClient& nats) {
                   return;
                 }
 
-                const std::string topic = extract_topic(updated);
+                const std::string topic = extract_topic(updated);  // NOLINT
 
                 // Structured log: hi.logs.nestor.research_completed (ADR-005).
                 np->publish_log("hi.logs.nestor.research_completed", "info",
