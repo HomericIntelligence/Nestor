@@ -209,4 +209,57 @@ TEST(StoreTest, ConcurrentSubmitAndCompleteCounterConsistency) {
   EXPECT_EQ(check2["error"], "not_found");
 }
 
+TEST(StoreTest, GetResearchReturnsSubmittedItem) {
+  Store store;
+  const json body = {{"idea", "test idea"}, {"context", "test context"}};
+  const json submit_result = store.submit_research(body);
+  const std::string id = submit_result["id"].get<std::string>();
+
+  const json item = store.get_research(id);
+  EXPECT_EQ(item["id"], id);
+  EXPECT_EQ(item["idea"], "test idea");
+  EXPECT_EQ(item["context"], "test context");
+  EXPECT_EQ(item["status"], "pending");
+}
+
+TEST(StoreTest, GetResearchUnknownIdReturnsError) {
+  Store store;
+  const json result = store.get_research("nonexistent-id");
+  EXPECT_EQ(result["error"], "not_found");
+}
+
+TEST(StoreTest, ListResearchInitiallyEmpty) {
+  Store store;
+  const json result = store.list_research();
+  EXPECT_EQ(result["count"], 0);
+  EXPECT_TRUE(result["items"].is_array());
+  EXPECT_TRUE(result["items"].empty());
+}
+
+TEST(StoreTest, ListResearchAfterSubmissions) {
+  Store store;
+  const json r1 = store.submit_research({{"idea", "idea one"}});
+  const json r2 = store.submit_research({{"idea", "idea two"}});
+  const std::string id1 = r1["id"].get<std::string>();
+  const std::string id2 = r2["id"].get<std::string>();
+
+  const json result = store.list_research();
+  EXPECT_EQ(result["count"], 2);
+  ASSERT_TRUE(result["items"].is_array());
+
+  // Both ids must appear in the items list (order unspecified for unordered_map).
+  bool found1 = false;
+  bool found2 = false;
+  for (const auto& item : result["items"]) {
+    if (item["id"] == id1) {
+      found1 = true;
+    }
+    if (item["id"] == id2) {
+      found2 = true;
+    }
+  }
+  EXPECT_TRUE(found1);
+  EXPECT_TRUE(found2);
+}
+
 }  // namespace projectnestor::test

@@ -122,6 +122,24 @@ json Store::complete_research(const std::string& id) {
   return result;
 }
 
+json Store::get_research(const std::string& id) const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto it = research_items_.find(id);
+  if (it == research_items_.end()) {
+    return json{{"error", "not_found"}};
+  }
+  return it->second;
+}
+
+json Store::list_research() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  json items = json::array();
+  for (const auto& [_, item] : research_items_) {
+    items.push_back(item);
+  }
+  return json{{"items", items}, {"count", items.size()}};
+}
+
 void Store::evict_oldest_locked() {
   assert(!insertion_order_.empty());
   const std::string id = std::move(insertion_order_.front());
