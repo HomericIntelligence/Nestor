@@ -1,9 +1,9 @@
 function(set_project_warnings project_name)
-  set(MSVC_WARNINGS /W4 /WX /permissive-)
+  set(MSVC_WARNINGS /W4 /permissive-)
   set(CLANG_WARNINGS
       -Wall -Wextra -Wpedantic -Wshadow -Wnon-virtual-dtor -Wold-style-cast
       -Wcast-align -Wunused -Woverloaded-virtual -Wconversion -Wsign-conversion
-      -Wnull-dereference -Wdouble-promotion -Wformat=2 -Wimplicit-fallthrough -Werror)
+      -Wnull-dereference -Wdouble-promotion -Wformat=2 -Wimplicit-fallthrough)
   set(GCC_WARNINGS
       ${CLANG_WARNINGS}
       -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches
@@ -15,6 +15,14 @@ function(set_project_warnings project_name)
     set(PROJECT_WARNINGS_CXX ${CLANG_WARNINGS})
   elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set(PROJECT_WARNINGS_CXX ${GCC_WARNINGS})
+  endif()
+
+  if(ProjectNestor_WARNINGS_AS_ERRORS)
+    if(MSVC)
+      list(APPEND PROJECT_WARNINGS_CXX /WX)
+    else()
+      list(APPEND PROJECT_WARNINGS_CXX -Werror)
+    endif()
   endif()
 
   target_compile_options(${project_name} PRIVATE ${PROJECT_WARNINGS_CXX})
