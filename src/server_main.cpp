@@ -123,7 +123,7 @@ int main() {
                      " — DO NOT USE IN PRODUCTION",
                      {});
   } else {
-    std::cout << "[ratelimit] INFO: enabled" << " default_rps=" << rl_cfg.default_rps
+    std::cout << "[ratelimit] INFO: enabled default_rps=" << rl_cfg.default_rps
               << " default_burst=" << rl_cfg.default_burst
               << " research_rps=" << rl_cfg.research_rps
               << " research_burst=" << rl_cfg.research_burst << "\n";
