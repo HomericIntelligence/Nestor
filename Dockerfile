@@ -2,16 +2,16 @@ FROM ubuntu@sha256:c4a8d5503dfb2a3eb8ab5f807da5bc69a85730fb49b5cfca2330194ebcc41
 # ubuntu:24.04 — pinned for reproducible builds (#60)
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    cmake \
-    ninja-build \
-    make \
-    g++ \
-    git \
-    ca-certificates \
-    libssl-dev \
-    python3 \
-    python3-pip \
-    python3-venv \
+    cmake=3.28.3-1~ubuntu24.04.1 \
+    ninja-build=1.11.1-1ubuntu1 \
+    make=4.3-4.1ubuntu1 \
+    g++=4:13.2-1ubuntu2 \
+    git=1:2.43.0-1ubuntu1 \
+    ca-certificates=20240701 \
+    libssl-dev=3.0.13-0ubuntu3.1 \
+    python3=3.12.3-1 \
+    python3-pip=24.0-1 \
+    python3-venv=3.12.3-1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Conan inside an isolated venv to avoid PEP 668 / system-package
@@ -53,8 +53,8 @@ FROM ubuntu@sha256:c4a8d5503dfb2a3eb8ab5f807da5bc69a85730fb49b5cfca2330194ebcc41
 # ubuntu:24.04 — pinned for reproducible builds (#60)
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libssl3 \
-    wget \
+    libssl3=3.0.13-0ubuntu3.1 \
+    wget=1.21.2-2ubuntu1 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /src/build/ProjectNestor_server /usr/local/bin/ProjectNestor_server
