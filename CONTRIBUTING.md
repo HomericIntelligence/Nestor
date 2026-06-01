@@ -43,6 +43,9 @@ just build
 just test
 ```
 
+Non-Linux contributors (ARM64, macOS): pixi is currently Linux-64 only — install
+Conan, CMake, and Ninja directly and follow `conan/profiles/README.md`.
+
 ### Install Pre-commit Hooks
 
 ```bash

@@ -14,7 +14,7 @@ Nestor transforms raw ideas into researched briefs that Agamemnon can plan and e
 
 ## Prerequisites
 
-- C++20 toolchain (GCC 14+ or Clang 17+)
+- C++20 toolchain (GCC 12+ or Clang 15+; CI tests against GCC 14 / Clang 17)
 - CMake 3.20+
 - [Conan](https://docs.conan.io/) 2.x — provides `cpp-httplib`, `nlohmann_json`, and `gtest`
 - [pixi](https://pixi.sh/) — pinned task runner
@@ -26,11 +26,14 @@ Nestor transforms raw ideas into researched briefs that Agamemnon can plan and e
 
 Conan provides `cpp-httplib`, `nlohmann_json`, and `gtest`. Install
 dependencies first — the CMake presets expect the Conan toolchain at
-`build/debug/`:
+`build/debug/`.
+
+First-time setup: `conan profile detect --exist-ok` generates your host's base
+profile (the committed profiles extend it via `include(default)`). `just deps`
+runs this automatically.
 
 ```bash
-just deps          # or: conan install . --output-folder=build/debug \
-                   #         --profile=conan/profiles/debug --build=missing
+just deps          # bootstrap + conan install --profile:all=conan/profiles/nestor-debug
 cmake --preset debug
 cmake --build --preset debug
 ctest --preset debug
@@ -42,6 +45,10 @@ Or via the all-in-one recipes:
 just build
 just test
 ```
+
+**Non-Linux hosts (ARM64, macOS):** `pixi` is currently Linux-64 only. Install
+Conan, CMake, and Ninja directly and follow `conan/profiles/README.md` for the
+manual build path.
 
 ## Running
 

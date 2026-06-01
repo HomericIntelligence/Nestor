@@ -19,7 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN python3 -m venv /opt/conan-venv \
     && /opt/conan-venv/bin/pip install --no-cache-dir conan \
     && ln -s /opt/conan-venv/bin/conan /usr/local/bin/conan \
-    && conan profile detect
+    && conan profile detect --force
 
 WORKDIR /src
 
@@ -28,7 +28,7 @@ COPY conanfile.py ./
 COPY conan/ conan/
 RUN conan install . \
     --output-folder=build \
-    --profile=conan/profiles/default \
+    --profile:all=conan/profiles/nestor-release \
     --build=missing
 
 # Copy CMake configuration so FetchContent (nats.c) can be cached separately.
