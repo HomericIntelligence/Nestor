@@ -10,6 +10,7 @@ add_executable(${PROJECT_NAME}_tests
   src/test_auth_middleware.cpp
   src/test_request_limits.cpp
   src/test_store_concurrency.cpp
+  src/test_rate_limiter.cpp
 )
 
 target_compile_features(${PROJECT_NAME}_tests PRIVATE cxx_std_20)
