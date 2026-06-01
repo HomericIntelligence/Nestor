@@ -12,6 +12,10 @@ add_executable(${PROJECT_NAME}_tests
 target_compile_features(${PROJECT_NAME}_tests PRIVATE cxx_std_20)
 set_target_properties(${PROJECT_NAME}_tests PROPERTIES CXX_EXTENSIONS OFF)
 
+target_include_directories(${PROJECT_NAME}_tests PRIVATE
+  ${gtest_INCLUDE_DIRS_RELEASE}
+)
+
 target_link_libraries(${PROJECT_NAME}_tests
   PRIVATE
     ${PROJECT_NAME}::${PROJECT_NAME}

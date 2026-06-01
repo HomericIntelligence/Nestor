@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 
+#include "nats.h"
 #include "nlohmann/json.hpp"
 
 namespace projectnestor {
@@ -28,8 +29,8 @@ class NatsClient {
 
  private:
   std::string url_;
-  void* conn_ = nullptr;
-  void* js_ = nullptr;
+  natsConnection* conn_ = nullptr;
+  jsCtx* js_ = nullptr;
   bool connected_ = false;
 };
 
