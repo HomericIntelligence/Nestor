@@ -71,6 +71,7 @@ add_library(${PROJECT_NAME}_core STATIC
   src/routes.cpp
   src/nats_client.cpp
   src/auth.cpp
+  src/trace_context.cpp
 )
 add_library(${PROJECT_NAME}::core ALIAS ${PROJECT_NAME}_core)
 

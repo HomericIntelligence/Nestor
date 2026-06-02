@@ -71,7 +71,7 @@ json Store::get_stats() const {
   };
 }
 
-json Store::submit_research(const json& body) {
+json Store::submit_research(const json& body, const std::string& trace_id) {
   const std::string id = detail::generate_uuid();
   const std::string submitted_at = detail::now_iso8601();
 
@@ -80,7 +80,7 @@ json Store::submit_research(const json& body) {
 
   json item = {
       {"id", id},           {"status", "pending"},          {"idea", idea},
-      {"context", context}, {"submitted_at", submitted_at},
+      {"context", context}, {"submitted_at", submitted_at}, {"trace_id", trace_id},
   };
 
   {

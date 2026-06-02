@@ -108,7 +108,8 @@ bool NatsClient::publish(const std::string& subject, const std::string& payload)
 }
 
 void NatsClient::publish_log(const std::string& subject, const std::string& level,
-                             const std::string& message, const nlohmann::json& metadata) {
+                             const std::string& message, const nlohmann::json& metadata,
+                             const std::string& trace_id) {
   if (!connected_) {
     return;  // Graceful degradation — NATS unavailable.
   }
@@ -118,7 +119,7 @@ void NatsClient::publish_log(const std::string& subject, const std::string& leve
 
   const nlohmann::json payload = {
       {"timestamp", timestamp}, {"service", "nestor"},  {"level", level},
-      {"message", message},     {"metadata", metadata},
+      {"message", message},     {"metadata", metadata}, {"trace_id", trace_id},
   };
 
   const std::string payload_str = payload.dump();

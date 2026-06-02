@@ -24,7 +24,7 @@ class Store {
   explicit Store(std::size_t max_items = kDefaultMaxItems);
 
   json get_stats() const;
-  json submit_research(const json& body);
+  json submit_research(const json& body, const std::string& trace_id = "");
 
   // Mark a research task as completed.  Returns the updated item, or a JSON
   // object with {"error": "not_found"} if the id is unknown.
