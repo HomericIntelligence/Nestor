@@ -7,6 +7,7 @@ add_executable(${PROJECT_NAME}_tests
   src/test_store.cpp
   src/test_store_concurrent.cpp
   src/test_nats_client.cpp
+  src/test_reconnect_policy.cpp
   src/test_routes.cpp
   src/test_auth.cpp
   src/test_trace_context.cpp
