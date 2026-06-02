@@ -150,12 +150,13 @@ TEST_F(RoutesTest, StatsReflectsCompletion) {
 
 TEST_F(RoutesTest, GetResearchByIdReturnsItem) {
   const std::string payload = R"({"idea":"research idea","context":"ctx"})";
-  const auto submit_res = client_->Post("/v1/research", payload, "application/json");
+  const auto submit_res =
+      client_->Post("/v1/research", auth_headers(), payload, "application/json");
   ASSERT_TRUE(submit_res);
   ASSERT_EQ(submit_res->status, 202);
   const std::string id = json::parse(submit_res->body)["id"].get<std::string>();
 
-  const auto res = client_->Get("/v1/research/" + id);
+  const auto res = client_->Get("/v1/research/" + id, auth_headers());
   ASSERT_TRUE(res);
   EXPECT_EQ(res->status, 200);
   const auto body = json::parse(res->body);
@@ -165,7 +166,7 @@ TEST_F(RoutesTest, GetResearchByIdReturnsItem) {
 }
 
 TEST_F(RoutesTest, GetResearchUnknownIdReturns404) {
-  const auto res = client_->Get("/v1/research/nonexistent-id");
+  const auto res = client_->Get("/v1/research/nonexistent-id", auth_headers());
   ASSERT_TRUE(res);
   EXPECT_EQ(res->status, 404);
   const auto body = json::parse(res->body);
@@ -175,18 +176,19 @@ TEST_F(RoutesTest, GetResearchUnknownIdReturns404) {
 TEST_F(RoutesTest, GetResearchByIdNotFoundAfterCompletion) {
   // complete_research erases the item from the store; GET by id returns 404.
   const std::string payload = R"({"idea":"complete me","context":"ctx"})";
-  const auto submit_res = client_->Post("/v1/research", payload, "application/json");
+  const auto submit_res =
+      client_->Post("/v1/research", auth_headers(), payload, "application/json");
   ASSERT_TRUE(submit_res);
   ASSERT_EQ(submit_res->status, 202);
   const std::string id = json::parse(submit_res->body)["id"].get<std::string>();
 
   const auto complete_res =
-      client_->Post("/v1/research/" + id + "/complete", "", "application/json");
+      client_->Post("/v1/research/" + id + "/complete", auth_headers(), "", "application/json");
   ASSERT_TRUE(complete_res);
   ASSERT_EQ(complete_res->status, 200);
 
   // Item is erased on completion; get_research returns not_found.
-  const auto get_res = client_->Get("/v1/research/" + id);
+  const auto get_res = client_->Get("/v1/research/" + id, auth_headers());
   ASSERT_TRUE(get_res);
   EXPECT_EQ(get_res->status, 404);
   const auto body = json::parse(get_res->body);
@@ -195,7 +197,7 @@ TEST_F(RoutesTest, GetResearchByIdNotFoundAfterCompletion) {
 
 TEST_F(RoutesTest, GetResearchStatsNotMatchedAsId) {
   // Guards against route-ordering regression: /stats must not be captured as :id.
-  const auto res = client_->Get("/v1/research/stats");
+  const auto res = client_->Get("/v1/research/stats", auth_headers());
   ASSERT_TRUE(res);
   EXPECT_EQ(res->status, 200);
   const auto body = json::parse(res->body);
@@ -205,7 +207,7 @@ TEST_F(RoutesTest, GetResearchStatsNotMatchedAsId) {
 }
 
 TEST_F(RoutesTest, ListResearchEmptyInitially) {
-  const auto res = client_->Get("/v1/research");
+  const auto res = client_->Get("/v1/research", auth_headers());
   ASSERT_TRUE(res);
   EXPECT_EQ(res->status, 200);
   const auto body = json::parse(res->body);
@@ -215,17 +217,19 @@ TEST_F(RoutesTest, ListResearchEmptyInitially) {
 }
 
 TEST_F(RoutesTest, ListResearchReturnsSubmittedItems) {
-  const auto r1 = client_->Post("/v1/research", R"({"idea":"first"})", "application/json");
+  const auto r1 =
+      client_->Post("/v1/research", auth_headers(), R"({"idea":"first"})", "application/json");
   ASSERT_TRUE(r1);
   ASSERT_EQ(r1->status, 202);
   const std::string id1 = json::parse(r1->body)["id"].get<std::string>();
 
-  const auto r2 = client_->Post("/v1/research", R"({"idea":"second"})", "application/json");
+  const auto r2 =
+      client_->Post("/v1/research", auth_headers(), R"({"idea":"second"})", "application/json");
   ASSERT_TRUE(r2);
   ASSERT_EQ(r2->status, 202);
   const std::string id2 = json::parse(r2->body)["id"].get<std::string>();
 
-  const auto res = client_->Get("/v1/research");
+  const auto res = client_->Get("/v1/research", auth_headers());
   ASSERT_TRUE(res);
   EXPECT_EQ(res->status, 200);
   const auto body = json::parse(res->body);
