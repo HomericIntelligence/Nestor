@@ -2,8 +2,6 @@
 
 #include "projectnestor/store.hpp"
 
-#include <algorithm>
-#include <cassert>
 #include <chrono>
 #include <ctime>
 #include <iomanip>
@@ -12,7 +10,8 @@
 
 namespace projectnestor {
 
-Store::Store(std::size_t max_items) : max_items_(max_items) {}
+Store::Store(std::size_t max_items, std::chrono::seconds pending_ttl)
+    : max_items_(max_items), pending_ttl_(pending_ttl) {}
 
 namespace detail {
 
@@ -67,11 +66,27 @@ json Store::get_stats() const {
   return json{
       {"completed", completed_},
       {"pending", pending_},
-      {"items_count", static_cast<int>(research_items_.size())},
+      {"expired", expired_.load()},
   };
 }
 
+void Store::evict_expired_pending_locked(std::chrono::system_clock::time_point now) {
+  // After the eager-erase change to complete_research, only pending items
+  // remain in the map (completed items are removed immediately on transition).
+  // The timestamp predicate alone is therefore correct — no status check needed.
+  for (auto it = research_items_.begin(); it != research_items_.end();) {
+    if (now - it->second.submitted_at >= pending_ttl_) {
+      --pending_;
+      ++expired_;
+      it = research_items_.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
 json Store::submit_research(const json& body, const std::string& trace_id) {
+  const auto now = std::chrono::system_clock::now();
   const std::string id = detail::generate_uuid();
   const std::string submitted_at = detail::now_iso8601();
 
@@ -85,12 +100,16 @@ json Store::submit_research(const json& body, const std::string& trace_id) {
 
   {
     std::lock_guard<std::mutex> lock(mutex_);
-    research_items_[id] = item;
-    insertion_order_.push_back(id);
-    ++pending_;
-    while (research_items_.size() > max_items_) {
-      evict_oldest_locked();
+    // Sweep TTL-expired pending items before checking capacity.
+    // Eviction is lazy: it fires only at insert time, not autonomously.
+    // This design means pending items may linger past TTL during idle periods,
+    // bounded only by max_items_. Eviction is best-effort, not a hard SLA.
+    evict_expired_pending_locked(now);
+    if (research_items_.size() >= max_items_) {
+      return json{{"error", "capacity"}};
     }
+    research_items_[id] = Entry{item, now};
+    ++pending_;
   }
 
   return json{{"id", id}, {"status", "pending"}};
@@ -98,26 +117,23 @@ json Store::submit_research(const json& body, const std::string& trace_id) {
 
 json Store::complete_research(const std::string& id) {
   std::lock_guard<std::mutex> lock(mutex_);
+  // NOTE: no TTL sweep here. Removing the sweep from complete_research
+  // eliminates the sweep-before-find race where the item being completed
+  // could be silently evicted mid-call. The caller's intent is always
+  // honoured: if the item is in the map (even if past TTL), it is completed.
   auto it = research_items_.find(id);
   if (it == research_items_.end()) {
     return json{{"error", "not_found"}};
   }
 
-  it->second["status"] = "completed";
-  it->second["completed_at"] = detail::now_iso8601();
-  json result = it->second;
+  // Build result from a local copy before erasing to avoid dangling reference.
+  json result = it->second.item;
+  result["status"] = "completed";
+  result["completed_at"] = detail::now_iso8601();
 
+  research_items_.erase(it);
   --pending_;
   ++completed_;
-
-  // Erase from map
-  research_items_.erase(it);
-
-  // Erase from insertion order (linear scan, but bounded by max_items_)
-  auto pos = std::find(insertion_order_.begin(), insertion_order_.end(), id);
-  if (pos != insertion_order_.end()) {
-    insertion_order_.erase(pos);
-  }
 
   return result;
 }
@@ -128,34 +144,16 @@ json Store::get_research(const std::string& id) const {
   if (it == research_items_.end()) {
     return json{{"error", "not_found"}};
   }
-  return it->second;
+  return it->second.item;
 }
 
 json Store::list_research() const {
   std::lock_guard<std::mutex> lock(mutex_);
   json items = json::array();
-  for (const auto& [_, item] : research_items_) {
-    items.push_back(item);
+  for (const auto& [_, entry] : research_items_) {
+    items.push_back(entry.item);
   }
   return json{{"items", items}, {"count", items.size()}};
-}
-
-void Store::evict_oldest_locked() {
-  assert(!insertion_order_.empty());
-  const std::string id = std::move(insertion_order_.front());
-  insertion_order_.pop_front();
-
-  auto it = research_items_.find(id);
-  assert(it != research_items_.end());
-
-  const std::string status = it->second.value("status", "");
-  if (status == "pending") {
-    --pending_;
-  } else if (status == "completed") {
-    --completed_;
-  }
-
-  research_items_.erase(it);
 }
 
 }  // namespace projectnestor
