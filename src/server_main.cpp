@@ -75,6 +75,10 @@ int main() {
   httplib::Server server;
   g_server = &server;
 
+  server.set_payload_max_length(1 * 1024 * 1024);  // 1 MiB
+  server.set_read_timeout(5, 0);
+  server.set_write_timeout(5, 0);
+
   std::signal(SIGINT, signal_handler);
   std::signal(SIGTERM, signal_handler);
 
