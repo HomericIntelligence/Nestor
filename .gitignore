@@ -12,3 +12,7 @@ cmake_install.cmake
 CTestTestfile.cmake
 CMakeUserPresets.json
 _deps/
+
+# TLS test fixtures — generated locally, never committed
+test/fixtures/tls/*.key
+test/fixtures/tls/*.crt

@@ -1,6 +1,8 @@
 {
     "version": "0.5",
     "requires": [
+        "zlib/1.3.2#1cb806da49011867778ffb6ac7190fcb%1777558780.503",
+        "openssl/3.6.2#36f92686a9285adfe2ccd1c1dbf9ea35%1775635547.022",
         "nlohmann_json/3.11.3#45828be26eb619a2e04ca517bb7b828d%1701220705.259",
         "gtest/1.14.0#f8f0757a574a8dd747d16af62d6eb1b7%1743410807.169",
         "cpp-httplib/0.18.3#ad62795f35f0fecaea1fd4bdb7b949f0%1748426309.372"

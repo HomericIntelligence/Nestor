@@ -73,6 +73,8 @@ add_library(${PROJECT_NAME}_core STATIC
   src/auth.cpp
   src/trace_context.cpp
   src/rate_limiter.cpp
+  src/tls_config.cpp
+  src/security_warnings.cpp
 )
 add_library(${PROJECT_NAME}::core ALIAS ${PROJECT_NAME}_core)
 
