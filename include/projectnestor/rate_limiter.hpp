@@ -63,8 +63,9 @@ class RateLimiter {
   /// @param cfg      Rate limit configuration (must satisfy invariants).
   /// @param now_fn   Injectable clock; defaults to steady_clock::now().
   ///                 Override in unit tests for deterministic timing.
-  explicit RateLimiter(
-      RateLimitConfig cfg, NowFn now_fn = []() { return Clock::now(); });
+  // clang-format off
+  explicit RateLimiter(RateLimitConfig cfg, NowFn now_fn = []() { return Clock::now(); });
+  // clang-format on
 
   /// Check and consume a token for the given client key.
   ///
