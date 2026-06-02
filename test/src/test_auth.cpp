@@ -2,6 +2,7 @@
 
 #include "projectnestor/auth.hpp"
 #include "projectnestor/nats_client.hpp"
+#include "projectnestor/rate_limiter.hpp"
 #include "projectnestor/routes.hpp"
 #include "projectnestor/store.hpp"
 
@@ -27,6 +28,15 @@ class AuthTest : public ::testing::Test {
   httplib::Server server_;
   Store store_;
   NatsClient nats_{"nats://localhost:1"};
+  RateLimiter limiter_{[]() {
+    RateLimitConfig cfg;
+    cfg.default_rps = 10000.0;
+    cfg.default_burst = 10000.0;
+    cfg.research_rps = 10000.0;
+    cfg.research_burst = 10000.0;
+    cfg.disabled = false;
+    return cfg;
+  }()};
   int port_{0};
   std::thread thread_;
   std::unique_ptr<httplib::Client> client_;
@@ -36,7 +46,7 @@ void AuthTest::SetUp() {
   // Install middleware with a known test token and Required mode.
   AuthConfig cfg{AuthMode::Required, "test-token"};
   install_auth_middleware(server_, cfg);
-  register_routes(server_, store_, nats_);
+  register_routes(server_, store_, nats_, limiter_);
 
   port_ = server_.bind_to_any_port("127.0.0.1");
   thread_ = std::thread([this]() { server_.listen_after_bind(); });
