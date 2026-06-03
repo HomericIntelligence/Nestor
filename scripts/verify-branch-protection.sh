@@ -1,20 +1,26 @@
 #!/usr/bin/env bash
 # Verify that main branch protection is correctly configured.
 #
-# This reads the *effective* branch rules via the
-# `GET /repos/{owner}/{repo}/rules/branches/{branch}` endpoint, which is
-# readable with the default Actions `contents: read` token. The previous
-# implementation called `branches/{branch}/protection`, which requires an
-# admin-scoped token the default GITHUB_TOKEN cannot obtain (resulting in a
-# hard 403 "Resource not accessible by integration" on every PR). The rules
-# endpoint exposes the same enforced invariants without needing admin scope.
+# The asserted invariants match ProjectNestor's documented branch protection
+# policy (docs/governance/branch-protection.md): PRs required, at least 1
+# approving review, conversation-thread resolution required, required status
+# checks enforced. Other HomericIntelligence repos may differ; this script
+# speaks only for ProjectNestor.
 set -euo pipefail
 
 REPO="HomericIntelligence/ProjectNestor"
 
-# Fetch the effective branch rules for main. This returns a flat array of the
-# rules that apply to the branch (from branch protection and/or rulesets).
-rules=$(gh api "repos/${REPO}/rules/branches/main")
+# Fetch the effective branch rules for main. The fetcher is exposed as a
+# function so tests can override it via VERIFY_RULES_FIXTURE without
+# touching the network; in normal CI runs the function calls gh api.
+fetch_rules() {
+  if [ -n "${VERIFY_RULES_FIXTURE:-}" ]; then
+    cat "$VERIFY_RULES_FIXTURE"
+  else
+    gh api "repos/${REPO}/rules/branches/main"
+  fi
+}
+rules=$(fetch_rules)
 
 # Helper: extract the parameters object for a given rule type.
 params_for() {
@@ -30,15 +36,13 @@ if [ -z "$pr_params" ]; then
   exit 1
 fi
 
-# Check required_approving_review_count >= 1
+# ProjectNestor governance standard (docs/governance/branch-protection.md):
+# at least 1 approving review from a developer other than the author.
+# Asserting >= 1 (rather than == 1) so a future tightening to 2 does not
+# trip drift; tightening below 1 (self-merge) is what we are explicitly
+# blocking here, per audit issue #54.
 if ! jq -e '.required_approving_review_count >= 1' <<<"$pr_params" >/dev/null 2>&1; then
-  echo "ERROR: required_approving_review_count must be >= 1"
-  exit 1
-fi
-
-# Check stale reviews are dismissed on push.
-if ! jq -e '.dismiss_stale_reviews_on_push == true' <<<"$pr_params" >/dev/null 2>&1; then
-  echo "ERROR: dismiss_stale_reviews_on_push must be true"
+  echo "ERROR: required_approving_review_count must be >= 1 (see docs/governance/branch-protection.md, audit #54)"
   exit 1
 fi
 

@@ -2,7 +2,7 @@
 
 ## Policy
 
-All PRs to `main` require:
+All PRs to `main` require (see audit issue #54 for the §10 remediation history):
 
 - **≥1 approving review** from a developer other than the author
 - **All required status checks** must pass, including:
