@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
       - name: Install build deps
         run: |
           sudo apt-get update
@@ -27,7 +27,7 @@ jobs:
           pip install conan
           conan profile detect --force
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@8aad20d150bbac5944a9f9d289da16a4b0d87c1e  # v4
         with:
           languages: cpp
           queries: security-and-quality
@@ -40,6 +40,6 @@ jobs:
           cmake --preset debug
           cmake --build --preset debug
       - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@8aad20d150bbac5944a9f9d289da16a4b0d87c1e  # v4
         with:
           category: "/language:cpp"
