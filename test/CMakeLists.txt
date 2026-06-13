@@ -48,15 +48,18 @@ include(GoogleTest)
 # positive*-negative syntax to exclude both Routes and StoreConcurrencyTest
 # from the unit pass (GTest colon separates negative patterns after the "-").
 gtest_discover_tests(${PROJECT_NAME}_tests
+  DISCOVERY_MODE PRE_TEST
   TEST_FILTER "*-*Routes*:*StoreConcurrency*"
   PROPERTIES LABELS "unit"
 )
 gtest_discover_tests(${PROJECT_NAME}_tests
+  DISCOVERY_MODE PRE_TEST
   TEST_FILTER "*Routes*"
   TEST_PREFIX "integration."
   PROPERTIES LABELS "integration"
 )
 gtest_discover_tests(${PROJECT_NAME}_tests
+  DISCOVERY_MODE PRE_TEST
   TEST_FILTER "*StoreConcurrency*"
   TEST_PREFIX "concurrency."
   PROPERTIES LABELS "concurrency"
