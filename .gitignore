@@ -16,3 +16,6 @@ _deps/
 # TLS test fixtures — generated locally, never committed
 test/fixtures/tls/*.key
 test/fixtures/tls/*.crt
+
+# Follow-up analysis artifacts — tooling output, never committed
+.followup-*.json

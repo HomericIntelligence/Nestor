@@ -1,24 +1,22 @@
 // test_store_concurrent.cpp — StoreConcurrencyTest suite for projectnestor::Store
 //
-// KNOWN IMPLEMENTATION ASYMMETRY (see issue #93):
-//   submit_research() inserts into research_items_ under mutex_, then releases
-//   the lock, then does ++pending_ (atomic, outside the lock). This means the
-//   map mutation and the pending_ counter are NOT updated atomically together.
-//   A mid-flight get_stats() call may observe a row in the map that is not yet
-//   reflected in pending_.
+// LOCKING INVARIANT (verified against src/store.cpp on main, issue #93):
+//   submit_research() inserts into research_items_ AND increments pending_
+//   inside the same lock_guard<std::mutex>(mutex_) block (src/store.cpp:101-113).
+//   complete_research() does find + erase + --pending_ + ++completed_ all under
+//   mutex_ (src/store.cpp:118-138). evict_expired_pending_locked() only
+//   decrements pending_ (src/store.cpp:79), never increments. pending_ and
+//   completed_ are plain `int`, not atomics — every read (get_stats,
+//   src/store.cpp:61-71) and every write is mutex_-guarded.
 //
-//   complete_research() does find + map mutation + --pending_ + ++completed_ ALL
-//   under mutex_, so it is fully consistent internally.
-//
-// DESIGN CONSEQUENCE:
-//   All counter/map assertions in this suite are made AT QUIESCENCE ONLY — after
-//   all test threads have been .join()ed. By the time join() returns, every
-//   ++pending_ atomic increment has retired, so final counter values are exact
-//   regardless of interleaving. No mid-flight invariants on pending_ are asserted.
+//   Consequence: any get_stats() snapshot is internally consistent with the
+//   map state at the moment the lock was held, so a mid-flight invariant of
+//   pending + completed <= ops_started_so_far is valid and asserted in
+//   ConcurrentReaders_DoNotCrashOrTearJsonStats below.
 //
 // If any test in this suite reveals a counter value inconsistent with the
-// total operation count at quiescence, that is a real bug per the "flag rather
-// than mask" principle (see HomericIntelligence team knowledge base).
+// total operation count, that is a real bug per the "flag rather than mask"
+// principle (see HomericIntelligence team knowledge base).
 
 #include "projectnestor/store.hpp"
 
@@ -224,6 +222,11 @@ TEST(StoreConcurrencyTest, ConcurrentReaders_DoNotCrashOrTearJsonStats) {
 
   std::atomic<bool> writers_done{false};
   std::atomic<int> bad_snapshot_count{0};
+  // Each submit OR complete bumps ops_started BEFORE the call. Sampling
+  // ops_started AFTER the get_stats() snapshot keeps the bound monotone
+  // in the reader's favor: a concurrent ++ops_started can only LOOSEN,
+  // never tighten, the bound (issue #93 invariant).
+  std::atomic<int> ops_started{0};
 
   // Reader threads — spin reading stats until writers are done.
   std::vector<std::thread> readers;
@@ -234,11 +237,15 @@ TEST(StoreConcurrencyTest, ConcurrentReaders_DoNotCrashOrTearJsonStats) {
       reader_gate.arrive_and_wait();
       while (!writers_done.load()) {
         const json stats = store.get_stats();
-        // Validate snapshot structural integrity (mid-flight — no exact values).
-        bool ok = stats.contains("pending") && stats.contains("completed") &&
-                  stats["pending"].is_number_integer() && stats["completed"].is_number_integer() &&
-                  stats["pending"].get<int>() >= 0 && stats["completed"].get<int>() >= 0;
-        if (!ok) {
+        const bool structurally_ok =
+            stats.contains("pending") && stats.contains("completed") &&
+            stats["pending"].is_number_integer() && stats["completed"].is_number_integer() &&
+            stats["pending"].get<int>() >= 0 && stats["completed"].get<int>() >= 0;
+        const int started = ops_started.load();
+        const bool counters_bounded =
+            structurally_ok &&
+            (stats["pending"].get<int>() + stats["completed"].get<int>() <= started);
+        if (!counters_bounded) {
           ++bad_snapshot_count;
         }
       }
@@ -253,7 +260,12 @@ TEST(StoreConcurrencyTest, ConcurrentReaders_DoNotCrashOrTearJsonStats) {
     writers.emplace_back([&]() {
       writer_gate.arrive_and_wait();
       for (int i = 0; i < kOpsPerWriter; ++i) {
+        ops_started.fetch_add(1, std::memory_order_relaxed);
         const json r = store.submit_research({{"idea", "reader stress"}});
+        ops_started.fetch_add(1, std::memory_order_relaxed);
+        // Fail loudly if submit_research did not return an id (e.g. a
+        // {"error","capacity"} result) rather than throwing in get<string>().
+        ASSERT_TRUE(r.contains("id")) << "submit_research must return an 'id' to complete";
         store.complete_research(r["id"].get<std::string>());
       }
     });
@@ -264,7 +276,8 @@ TEST(StoreConcurrencyTest, ConcurrentReaders_DoNotCrashOrTearJsonStats) {
   for (auto& t : readers) t.join();
 
   EXPECT_EQ(bad_snapshot_count.load(), 0)
-      << "every get_stats() snapshot must have non-negative integer values for both keys";
+      << "every get_stats() snapshot must have non-negative integer values "
+         "AND pending+completed must not exceed ops_started (issue #93)";
 
   // Final quiescent assertion.
   const json stats = store.get_stats();
