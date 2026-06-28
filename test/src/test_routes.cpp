@@ -573,4 +573,161 @@ TEST_F(StrictRateLimitRoutesTest, RateLimit429ResponseBodyShape) {
   EXPECT_EQ(body["detail"].get<std::string>(), "rate_limited");
 }
 
+TEST_F(RoutesTest, CompleteResearchWithMetadataPersistsFields) {
+  // Submit to get a valid id.
+  const std::string payload = R"({"idea":"test idea","context":"ctx"})";
+  const auto submit_res =
+      client_->Post("/v1/research", auth_headers(), payload, "application/json");
+  ASSERT_TRUE(submit_res);
+  const std::string id = json::parse(submit_res->body)["id"].get<std::string>();
+
+  // Complete with metadata.
+  const std::string metadata_payload =
+      R"({"summary":"test summary","results":{"count":42},"references":["ref1","ref2"]})";
+  const auto complete_res = client_->Post("/v1/research/" + id + "/complete", auth_headers(),
+                                          metadata_payload, "application/json");
+  ASSERT_TRUE(complete_res);
+  EXPECT_EQ(complete_res->status, 200);
+
+  const auto body = json::parse(complete_res->body);
+  EXPECT_EQ(body["status"], "completed");
+  EXPECT_EQ(body["summary"], "test summary");
+  EXPECT_EQ(body["results"]["count"], 42);
+  EXPECT_EQ(body["references"], json::array({"ref1", "ref2"}));
+}
+
+TEST_F(RoutesTest, CompleteResearchInvalidJsonReturns400) {
+  // Submit to get a valid id.
+  const std::string payload = R"({"idea":"test"})";
+  const auto submit_res =
+      client_->Post("/v1/research", auth_headers(), payload, "application/json");
+  ASSERT_TRUE(submit_res);
+  const std::string id = json::parse(submit_res->body)["id"].get<std::string>();
+
+  // Try to complete with invalid JSON.
+  const auto complete_res = client_->Post("/v1/research/" + id + "/complete", auth_headers(),
+                                          "not json", "application/json");
+  ASSERT_TRUE(complete_res);
+  EXPECT_EQ(complete_res->status, 400);
+  const auto body = json::parse(complete_res->body);
+  EXPECT_EQ(body["detail"], "Invalid JSON");
+}
+
+TEST_F(RoutesTest, CompleteResearchNonObjectBodyReturns400) {
+  // Submit to get a valid id.
+  const std::string payload = R"({"idea":"test"})";
+  const auto submit_res =
+      client_->Post("/v1/research", auth_headers(), payload, "application/json");
+  ASSERT_TRUE(submit_res);
+  const std::string id = json::parse(submit_res->body)["id"].get<std::string>();
+
+  // Try to complete with array instead of object.
+  const auto complete_res = client_->Post("/v1/research/" + id + "/complete", auth_headers(),
+                                          "[1,2,3]", "application/json");
+  ASSERT_TRUE(complete_res);
+  EXPECT_EQ(complete_res->status, 400);
+  const auto body = json::parse(complete_res->body);
+  EXPECT_EQ(body["detail"], "Body must be a JSON object");
+}
+
+TEST_F(RoutesTest, CompleteResearchNonJsonContentTypeReturns415) {
+  // Submit to get a valid id.
+  const std::string payload = R"({"idea":"test"})";
+  const auto submit_res =
+      client_->Post("/v1/research", auth_headers(), payload, "application/json");
+  ASSERT_TRUE(submit_res);
+  const std::string id = json::parse(submit_res->body)["id"].get<std::string>();
+
+  // Try to complete with wrong content-type.
+  const std::string metadata_payload = R"({"summary":"test"})";
+  const auto complete_res = client_->Post("/v1/research/" + id + "/complete", auth_headers(),
+                                          metadata_payload, "text/plain");
+  ASSERT_TRUE(complete_res);
+  EXPECT_EQ(complete_res->status, 415);
+  const auto body = json::parse(complete_res->body);
+  EXPECT_EQ(body["detail"], "Content-Type must be application/json");
+}
+
+TEST_F(RoutesTest, CompleteResearchRejectsReservedFieldOverwrite) {
+  // Submit to get a valid id.
+  const std::string payload = R"({"idea":"original idea","context":"original context"})";
+  const auto submit_res =
+      client_->Post("/v1/research", auth_headers(), payload, "application/json");
+  ASSERT_TRUE(submit_res);
+  const std::string id = json::parse(submit_res->body)["id"].get<std::string>();
+
+  // Try to overwrite reserved fields.
+  const std::string metadata_payload = R"({
+    "summary":"legitimate",
+    "status":"hacked",
+    "id":"nope",
+    "idea":"evil",
+    "context":"evil",
+    "submitted_at":"x",
+    "completed_at":"x"
+  })";
+  const auto complete_res = client_->Post("/v1/research/" + id + "/complete", auth_headers(),
+                                          metadata_payload, "application/json");
+  ASSERT_TRUE(complete_res);
+  EXPECT_EQ(complete_res->status, 200);
+
+  const auto body = json::parse(complete_res->body);
+  EXPECT_EQ(body["status"], "completed");
+  EXPECT_EQ(body["id"], id);
+  EXPECT_EQ(body["idea"], "original idea");
+  EXPECT_EQ(body["context"], "original context");
+  EXPECT_EQ(body["summary"], "legitimate");
+}
+
+TEST_F(RoutesTest, CompleteResearchSummaryWrongTypeReturns400) {
+  // Submit to get a valid id.
+  const std::string payload = R"({"idea":"test"})";
+  const auto submit_res =
+      client_->Post("/v1/research", auth_headers(), payload, "application/json");
+  ASSERT_TRUE(submit_res);
+  const std::string id = json::parse(submit_res->body)["id"].get<std::string>();
+
+  // Try to pass summary as number instead of string.
+  const auto complete_res = client_->Post("/v1/research/" + id + "/complete", auth_headers(),
+                                          R"({"summary":123})", "application/json");
+  ASSERT_TRUE(complete_res);
+  EXPECT_EQ(complete_res->status, 400);
+  const auto body = json::parse(complete_res->body);
+  EXPECT_EQ(body["detail"], "summary must be a string");
+}
+
+TEST_F(RoutesTest, CompleteResearchResultsArrayReturns400) {
+  // Submit to get a valid id.
+  const std::string payload = R"({"idea":"test"})";
+  const auto submit_res =
+      client_->Post("/v1/research", auth_headers(), payload, "application/json");
+  ASSERT_TRUE(submit_res);
+  const std::string id = json::parse(submit_res->body)["id"].get<std::string>();
+
+  // Try to pass results as array instead of object.
+  const auto complete_res = client_->Post("/v1/research/" + id + "/complete", auth_headers(),
+                                          R"({"results":[1,2,3]})", "application/json");
+  ASSERT_TRUE(complete_res);
+  EXPECT_EQ(complete_res->status, 400);
+  const auto body = json::parse(complete_res->body);
+  EXPECT_EQ(body["detail"], "results must be a JSON object");
+}
+
+TEST_F(RoutesTest, CompleteResearchReferencesNonStringReturns400) {
+  // Submit to get a valid id.
+  const std::string payload = R"({"idea":"test"})";
+  const auto submit_res =
+      client_->Post("/v1/research", auth_headers(), payload, "application/json");
+  ASSERT_TRUE(submit_res);
+  const std::string id = json::parse(submit_res->body)["id"].get<std::string>();
+
+  // Try to pass references with non-string elements.
+  const auto complete_res = client_->Post("/v1/research/" + id + "/complete", auth_headers(),
+                                          R"({"references":[1,2,3]})", "application/json");
+  ASSERT_TRUE(complete_res);
+  EXPECT_EQ(complete_res->status, 400);
+  const auto body = json::parse(complete_res->body);
+  EXPECT_EQ(body["detail"], "references must be an array of strings");
+}
+
 }  // namespace projectnestor::test

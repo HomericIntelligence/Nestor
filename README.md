@@ -83,7 +83,7 @@ curl -H "Authorization: Bearer your-secret-token" http://localhost:8080/v1/healt
 ### Other Environment variables
 
 | Variable | Default | Description |
-|---|---|---|
+| --- | --- | --- |
 | `NESTOR_PORT` | `8081` | HTTP server port |
 | `NATS_URL` | `nats://127.0.0.1:4222` | NATS broker URL for event publication |
 | `NESTOR_AUTH_TOKEN` | *(required)* | Bearer token for authentication |
@@ -92,11 +92,11 @@ curl -H "Authorization: Bearer your-secret-token" http://localhost:8080/v1/healt
 ## API
 
 | Method | Path | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `GET` | `/v1/health` | Liveness probe; returns `{"status":"ok"}` |
 | `GET` | `/v1/research/stats` | In-memory store counters |
 | `POST` | `/v1/research` | Submit `{idea, context?}` JSON; returns `202` with `{id, status:"pending"}` |
-| `POST` | `/v1/research/:id/complete` | Mark a research item complete; emits `hi.logs.nestor.research_completed` |
+| `POST` | `/v1/research/:id/complete` | Mark a research item complete; accepts optional JSON body with `summary` (string), `results` (object), `references` (array of strings); republishes to `hi.research.<id>` for Agamemnon |
 
 See `src/routes.cpp` for the canonical contract; `just docs` builds Doxygen
 API documentation under `build/docs/`.

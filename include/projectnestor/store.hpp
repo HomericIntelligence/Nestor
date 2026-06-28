@@ -39,14 +39,18 @@ class Store {
   // A TTL sweep of expired pending items is performed before checking capacity.
   json submit_research(const json& body, const std::string& trace_id = "");
 
-  // Mark a research task as completed.
+  // Mark a research task as completed.  Merges allow-listed metadata keys
+  // (`summary`, `results`, `references`) into the stored item. Reserved keys
+  // (`id`, `status`, `submitted_at`, `completed_at`, `idea`, `context`) are
+  // never overwritten because they are not in the allow-list. Unknown keys are
+  // ignored.
   // Returns the updated item (with status=="completed") on success.
   // Returns {"error": "not_found"} if the id is unknown, was already
   // completed/erased, or was evicted during a prior submit_research sweep.
   // NOTE: this method does NOT trigger TTL eviction. Pending-item TTL sweep
   // runs only in submit_research, so a pending item at/past TTL can still be
   // completed — the caller's intent is honoured.
-  json complete_research(const std::string& id);
+  json complete_research(const std::string& id, const json& metadata = json::object());
 
   // Look up a research item by id. Returns the stored item, or
   // {"error": "not_found"} if the id is unknown or has already been completed.
