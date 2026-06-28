@@ -26,20 +26,37 @@ Nestor must **not**:
 
 ## Handoff contract
 
-When research is submitted Nestor publishes to NATS subject `hi.research.<id>`
-with the body:
+Nestor publishes research state transitions to the `hi.research.<id>` subject
+that ProjectAgamemnon subscribes to (per Agent role boundaries, §44).
 
+**Pending event** (on submit):
 ```json
 {
   "id": "<uuid>",
   "idea": "<verbatim user text>",
   "context": "<optional context>",
-  "status": "pending"
+  "status": "pending",
+  "submitted_at": "<iso8601>"
 }
 ```
 
-When research is completed Nestor emits
-`hi.logs.nestor.research_completed` carrying `{research_id, topic}`.
+**Completed event** (on completion, extends the same subject):
+```json
+{
+  "id": "<uuid>",
+  "idea": "<original idea>",
+  "context": "<original context>",
+  "status": "completed",
+  "submitted_at": "<iso8601>",
+  "completed_at": "<iso8601>",
+  "summary": "<optional completion summary>",
+  "results": { "optional": "completion metadata as object" },
+  "references": ["optional", "array", "of", "references"]
+}
+```
+
+The structured log `hi.logs.nestor.research_completed` is also emitted (ADR-005)
+for audit trail purposes, carrying `{research_id, topic, has_summary, result_count, reference_count}`.
 
 ## Agent role boundaries
 

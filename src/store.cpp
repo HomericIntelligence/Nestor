@@ -2,11 +2,13 @@
 
 #include "projectnestor/store.hpp"
 
+#include <array>
 #include <chrono>
 #include <ctime>
 #include <iomanip>
 #include <random>
 #include <sstream>
+#include <string_view>
 
 namespace projectnestor {
 
@@ -115,7 +117,7 @@ json Store::submit_research(const json& body, const std::string& trace_id) {
   return json{{"id", id}, {"status", "pending"}};
 }
 
-json Store::complete_research(const std::string& id) {
+json Store::complete_research(const std::string& id, const json& metadata) {
   std::lock_guard<std::mutex> lock(mutex_);
   // NOTE: no TTL sweep here. Removing the sweep from complete_research
   // eliminates the sweep-before-find race where the item being completed
@@ -130,6 +132,15 @@ json Store::complete_research(const std::string& id) {
   json result = it->second.item;
   result["status"] = "completed";
   result["completed_at"] = detail::now_iso8601();
+
+  // Merge allow-listed metadata keys only. Reserved keys are never overwritten
+  // because they are not in the allow-list.
+  static constexpr std::array<std::string_view, 3> kAllowed = {"summary", "results", "references"};
+  for (const auto key : kAllowed) {
+    if (metadata.contains(key)) {
+      result[std::string(key)] = metadata[key];
+    }
+  }
 
   research_items_.erase(it);
   --pending_;

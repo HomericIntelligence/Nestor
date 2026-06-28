@@ -103,6 +103,62 @@ TEST(StoreTest, CompleteResearchUnknownIdReturnsError) {
   EXPECT_EQ(result["error"], "not_found");
 }
 
+TEST(StoreTest, CompleteResearchMergesAllowedFields) {
+  Store store;
+  const json submit_result = store.submit_research({{"idea", "test idea"}});
+  const std::string id = submit_result["id"].get<std::string>();
+
+  const json metadata = {{"summary", "test summary"},
+                         {"results", {{"count", 42}}},
+                         {"references", json::array({"ref1", "ref2"})}};
+  const json completed = store.complete_research(id, metadata);
+
+  EXPECT_EQ(completed["summary"], "test summary");
+  EXPECT_EQ(completed["results"]["count"], 42);
+  EXPECT_EQ(completed["references"], json::array({"ref1", "ref2"}));
+  EXPECT_EQ(completed["status"], "completed");
+}
+
+TEST(StoreTest, CompleteResearchDefaultMetadataArgWorks) {
+  Store store;
+  const json submit_result = store.submit_research({{"idea", "test idea"}});
+  const std::string id = submit_result["id"].get<std::string>();
+
+  const json completed = store.complete_research(id);
+  EXPECT_EQ(completed["status"], "completed");
+  EXPECT_TRUE(completed.contains("completed_at"));
+  EXPECT_FALSE(completed.contains("summary"));
+  EXPECT_FALSE(completed.contains("results"));
+  EXPECT_FALSE(completed.contains("references"));
+}
+
+TEST(StoreTest, CompleteResearchIgnoresUnknownAndReservedFields) {
+  Store store;
+  const json submit_result =
+      store.submit_research({{"idea", "original idea"}, {"context", "original context"}});
+  const std::string id = submit_result["id"].get<std::string>();
+
+  const json metadata = {{"id", "hacked-id"},
+                         {"status", "hacked-status"},
+                         {"idea", "evil idea"},
+                         {"context", "evil context"},
+                         {"submitted_at", "hacked-submitted"},
+                         {"completed_at", "hacked-completed"},
+                         {"random_field", "should be ignored"},
+                         {"summary", "legitimate summary"}};
+  const json completed = store.complete_research(id, metadata);
+
+  // Reserved fields should be unchanged
+  EXPECT_EQ(completed["id"], id);
+  EXPECT_EQ(completed["status"], "completed");
+  EXPECT_EQ(completed["idea"], "original idea");
+  EXPECT_EQ(completed["context"], "original context");
+  // Unknown fields should not appear
+  EXPECT_FALSE(completed.contains("random_field"));
+  // Allowed field should be present
+  EXPECT_EQ(completed["summary"], "legitimate summary");
+}
+
 // Verify eager erase: completing an item removes it from the map so a second
 // complete on the same id returns not_found.
 TEST(StoreTest, CompleteResearchErasesItemFromMap) {
