@@ -47,6 +47,8 @@ include(GoogleTest)
 # LABELS property per call.  The GTest filter "*-A:B" uses the
 # positive*-negative syntax to exclude both Routes and StoreConcurrencyTest
 # from the unit pass (GTest colon separates negative patterns after the "-").
+# DISCOVERY_MODE PRE_TEST defers discovery to test-execution time so it works
+# under sanitizer builds (ASan runtime is not linked at CMake-configure time).
 gtest_discover_tests(${PROJECT_NAME}_tests
   DISCOVERY_MODE PRE_TEST
   TEST_FILTER "*-*Routes*:*StoreConcurrency*"
