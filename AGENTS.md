@@ -30,6 +30,7 @@ Nestor publishes research state transitions to the `hi.research.<id>` subject
 that ProjectAgamemnon subscribes to (per Agent role boundaries, §44).
 
 **Pending event** (on submit):
+
 ```json
 {
   "id": "<uuid>",
@@ -41,6 +42,7 @@ that ProjectAgamemnon subscribes to (per Agent role boundaries, §44).
 ```
 
 **Completed event** (on completion, extends the same subject):
+
 ```json
 {
   "id": "<uuid>",
@@ -61,7 +63,7 @@ for audit trail purposes, carrying `{research_id, topic, has_summary, result_cou
 ## Agent role boundaries
 
 | Agent | Owns | Reads from Nestor |
-|---|---|---|
+| --- | --- | --- |
 | ProjectAgamemnon | planning, dispatch | `hi.research.*` |
 | ProjectArgus | observability | `hi.logs.nestor.*` |
 | ProjectHermes | NATS event bridge | all `hi.*` |
