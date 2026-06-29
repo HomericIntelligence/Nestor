@@ -180,7 +180,8 @@ just format
 - **Formatting**: clang-format v17 (enforced by pre-commit hook)
 - **Build generator**: Ninja via CMakePresets.json
 - **Dependencies**: Managed via CMake FetchContent (cpp-httplib, nlohmann_json, GoogleTest)
-- **Sanitizers**: `just asan` and `just tsan` build and run the test suite under ASAN+UBSan and TSAN respectively. Both also run in CI on every PR
+- **Sanitizers**: `just asan` and `just tsan` build and run the test suite under ASAN+UBSan and TSAN respectively. Both
+  also run in CI on every PR
 
 ## Pull Request Process
 
