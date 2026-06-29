@@ -165,8 +165,7 @@ When contributing to ProjectNestor:
 
 - Validate all HTTP request input before processing
 - Avoid buffer overflows and undefined behavior
-- Build with `cmake --preset debug` to run under AddressSanitizer + UndefinedBehaviorSanitizer; investigate any reports
-  before merging.
+- Run AddressSanitizer + UBSan (`just asan`) and ThreadSanitizer (`just tsan`); both gate every PR in CI
 - Never commit secrets, API keys, tokens, or credentials
 - Pin FetchContent dependency versions to known-good commits
 

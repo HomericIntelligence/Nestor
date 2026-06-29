@@ -9,6 +9,10 @@ inputs:
     description: 'Conan build type (Debug or Release)'
     required: true
     default: Release
+  output-subdir:
+    description: 'Output subdirectory under build/ (if not specified, derives from lowercased build-type)'
+    required: false
+    default: ''
 
 runs:
   using: composite
@@ -24,6 +28,10 @@ runs:
     - name: Install Conan dependencies
       shell: bash
       run: |
+        output_dir="build/${{ inputs.output-subdir }}"
+        if [ -z "${{ inputs.output-subdir }}" ]; then
+          output_dir="build/$(echo '${{ inputs.build-type }}' | tr '[:upper:]' '[:lower:]')"
+        fi
         conan install . --build=missing \
           -s build_type="${{ inputs.build-type }}" \
-          --output-folder "build/$(echo '${{ inputs.build-type }}' | tr '[:upper:]' '[:lower:]')"
+          --output-folder "$output_dir"
