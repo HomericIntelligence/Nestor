@@ -23,7 +23,9 @@
       "inherits": "base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "ProjectNestor_BUILD_TESTING": "ON"
+        "ProjectNestor_BUILD_TESTING": "ON",
+        "ProjectNestor_ENABLE_SANITIZERS": "ON",
+        "ProjectNestor_SANITIZER": "address;undefined"
       }
     },
     {
