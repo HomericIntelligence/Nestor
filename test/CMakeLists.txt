@@ -46,6 +46,7 @@ include(GoogleTest)
 #   - Tests in the "StoreConcurrencyTest" suite are labelled "concurrency" and
 #     excluded from the "unit" pass so they do not inflate fast-feedback times.
 #   - All other tests are labelled "unit".
+#   - SanitizerProof tests are registered manually with WILL_FAIL properties.
 # Three discovery passes are required because gtest_discover_tests applies one
 # LABELS property per call.  The GTest filter "*-A:B" uses the
 # positive*-negative syntax to exclude Routes, StoreConcurrencyTest, and the
@@ -55,23 +56,31 @@ include(GoogleTest)
 # must not be discovered here.
 # DISCOVERY_MODE PRE_TEST defers discovery to test-execution time so it works
 # under sanitizer builds (ASan runtime is not linked at CMake-configure time).
-gtest_discover_tests(${PROJECT_NAME}_tests
-  DISCOVERY_MODE PRE_TEST
-  TEST_FILTER "*-*Routes*:*StoreConcurrency*:SanitizerProof.*"
-  PROPERTIES LABELS "unit"
-)
-gtest_discover_tests(${PROJECT_NAME}_tests
-  DISCOVERY_MODE PRE_TEST
-  TEST_FILTER "*Routes*"
-  TEST_PREFIX "integration."
-  PROPERTIES LABELS "integration"
-)
-gtest_discover_tests(${PROJECT_NAME}_tests
-  DISCOVERY_MODE PRE_TEST
-  TEST_FILTER "*StoreConcurrency*"
-  TEST_PREFIX "concurrency."
-  PROPERTIES LABELS "concurrency"
-)
+#
+# ThreadSanitizer cannot run at CMake time for PRE_TEST discovery (memory
+# mapping failures), so for TSan builds we skip discovery entirely and rely only
+# on the manually-registered SanitizerProof.TSAN test below.
+if("thread" IN_LIST ${PROJECT_NAME}_SANITIZER)
+  message(STATUS "ThreadSanitizer detected: skipping auto-discovery, registering sanitizer tests only")
+else()
+  gtest_discover_tests(${PROJECT_NAME}_tests
+    DISCOVERY_MODE PRE_TEST
+    TEST_FILTER "*-*Routes*:*StoreConcurrency*:SanitizerProof.*"
+    PROPERTIES LABELS "unit"
+  )
+  gtest_discover_tests(${PROJECT_NAME}_tests
+    DISCOVERY_MODE PRE_TEST
+    TEST_FILTER "*Routes*"
+    TEST_PREFIX "integration."
+    PROPERTIES LABELS "integration"
+  )
+  gtest_discover_tests(${PROJECT_NAME}_tests
+    DISCOVERY_MODE PRE_TEST
+    TEST_FILTER "*StoreConcurrency*"
+    TEST_PREFIX "concurrency."
+    PROPERTIES LABELS "concurrency"
+  )
+endif()
 
 if(${PROJECT_NAME}_ENABLE_SANITIZERS)
   if("address" IN_LIST ${PROJECT_NAME}_SANITIZER)
