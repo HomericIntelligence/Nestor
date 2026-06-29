@@ -53,20 +53,6 @@ Conan, CMake, and Ninja directly and follow `conan/profiles/README.md`.
 pre-commit install
 ```
 
-### Toolchain Lock File
-
-`pixi.lock` is committed to ensure every contributor and CI run resolves to
-the same exact versions of cmake, ninja, clang-tools, gcovr, and pre-commit.
-The `>=` constraints in `pixi.toml` only bound upgrades; day-to-day installs
-must use the lock.
-
-- Use `pixi install --locked` (CI's mode) to install without resolving.
-  (`pixi shell` also respects the lock; `pixi install --locked` skips
-  environment activation and is CI's mode.)
-- After editing `pixi.toml`, run `pixi lock` and commit the updated
-  `pixi.lock` in the same PR. CI's `pixi-check` job fails if the lock is
-  stale or missing.
-
 ### Verify Your Setup
 
 ```bash
@@ -194,7 +180,7 @@ just format
 - **Formatting**: clang-format v17 (enforced by pre-commit hook)
 - **Build generator**: Ninja via CMakePresets.json
 - **Dependencies**: Managed via CMake FetchContent (cpp-httplib, nlohmann_json, GoogleTest)
-- **Sanitizers**: `cmake --preset debug` enables ASAN + UBSAN automatically; use it for memory-safety and UB debugging.
+- **Sanitizers**: `just asan` and `just tsan` build and run the test suite under ASAN+UBSan and TSAN respectively. Both also run in CI on every PR
 
 ## Pull Request Process
 

@@ -1,6 +1,7 @@
 option(${PROJECT_NAME}_BUILD_TESTING "Build tests" ON)
 option(${PROJECT_NAME}_ENABLE_DOXYGEN "Enable Doxygen documentation" OFF)
 option(${PROJECT_NAME}_ENABLE_SANITIZERS "Enable sanitizers" OFF)
+set(${PROJECT_NAME}_SANITIZER "address;undefined" CACHE STRING "Semicolon-separated list: address, thread, undefined")
 option(${PROJECT_NAME}_ENABLE_COVERAGE "Enable coverage reporting" OFF)
 option(${PROJECT_NAME}_WARNINGS_AS_ERRORS "Treat warnings as errors" ON)
 

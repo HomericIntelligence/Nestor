@@ -15,6 +15,7 @@ add_executable(${PROJECT_NAME}_tests
   src/test_tls_config.cpp
   src/test_security_warnings.cpp
   src/test_server_tls.cpp
+  src/test_sanitizers.cpp
 )
 
 target_compile_features(${PROJECT_NAME}_tests PRIVATE cxx_std_20)
@@ -36,6 +37,8 @@ target_link_libraries(${PROJECT_NAME}_tests
     ${PROJECT_NAME}::core
     GTest::gtest_main)
 
+enable_sanitizers(${PROJECT_NAME}_tests)
+
 include(GoogleTest)
 # Label tests so the unit/integration/concurrency split in CI works:
 #   - Tests in the "Routes" suite exercise the HTTP layer end-to-end and are
@@ -45,13 +48,16 @@ include(GoogleTest)
 #   - All other tests are labelled "unit".
 # Three discovery passes are required because gtest_discover_tests applies one
 # LABELS property per call.  The GTest filter "*-A:B" uses the
-# positive*-negative syntax to exclude both Routes and StoreConcurrencyTest
-# from the unit pass (GTest colon separates negative patterns after the "-").
+# positive*-negative syntax to exclude Routes, StoreConcurrencyTest, and the
+# manually-registered SanitizerProof tests from the unit pass (GTest colon
+# separates negative patterns after the "-").  SanitizerProof tests are
+# registered separately via add_test() below with WILL_FAIL properties, so they
+# must not be discovered here.
 # DISCOVERY_MODE PRE_TEST defers discovery to test-execution time so it works
 # under sanitizer builds (ASan runtime is not linked at CMake-configure time).
 gtest_discover_tests(${PROJECT_NAME}_tests
   DISCOVERY_MODE PRE_TEST
-  TEST_FILTER "*-*Routes*:*StoreConcurrency*"
+  TEST_FILTER "*-*Routes*:*StoreConcurrency*:SanitizerProof.*"
   PROPERTIES LABELS "unit"
 )
 gtest_discover_tests(${PROJECT_NAME}_tests
@@ -66,3 +72,21 @@ gtest_discover_tests(${PROJECT_NAME}_tests
   TEST_PREFIX "concurrency."
   PROPERTIES LABELS "concurrency"
 )
+
+if(${PROJECT_NAME}_ENABLE_SANITIZERS)
+  if("address" IN_LIST ${PROJECT_NAME}_SANITIZER)
+    add_test(NAME ProjectNestor.SanitizerProof.ASAN
+      COMMAND $<TARGET_FILE:${PROJECT_NAME}_tests>
+              --gtest_filter=SanitizerProof.HeapUseAfterFree)
+    set_tests_properties(ProjectNestor.SanitizerProof.ASAN PROPERTIES
+      WILL_FAIL ON LABELS "sanitizer")
+  endif()
+
+  if("thread" IN_LIST ${PROJECT_NAME}_SANITIZER)
+    add_test(NAME ProjectNestor.SanitizerProof.TSAN
+      COMMAND $<TARGET_FILE:${PROJECT_NAME}_tests>
+              --gtest_filter=SanitizerProof.DataRace)
+    set_tests_properties(ProjectNestor.SanitizerProof.TSAN PROPERTIES
+      WILL_FAIL ON LABELS "sanitizer")
+  endif()
+endif()
