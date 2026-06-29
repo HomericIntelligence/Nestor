@@ -87,8 +87,15 @@ if(${PROJECT_NAME}_ENABLE_SANITIZERS)
     add_test(NAME ProjectNestor.SanitizerProof.ASAN
       COMMAND $<TARGET_FILE:${PROJECT_NAME}_tests>
               --gtest_filter=SanitizerProof.HeapUseAfterFree)
+    # WILL_FAIL inverts a clean non-zero exit, but it treats a crash/signal
+    # (SIGABRT) as a hard failure rather than the expected outcome. The asan
+    # test preset sets abort_on_error=1, which makes the detected
+    # use-after-free abort via SIGABRT. Override it to 0 for this proof test so
+    # the sanitizer reports the error and exit()s with a non-zero code that
+    # WILL_FAIL can invert.
     set_tests_properties(ProjectNestor.SanitizerProof.ASAN PROPERTIES
-      WILL_FAIL ON LABELS "sanitizer")
+      WILL_FAIL ON LABELS "sanitizer"
+      ENVIRONMENT "ASAN_OPTIONS=abort_on_error=0:halt_on_error=1")
   endif()
 
   if("thread" IN_LIST ${PROJECT_NAME}_SANITIZER)
@@ -96,6 +103,7 @@ if(${PROJECT_NAME}_ENABLE_SANITIZERS)
       COMMAND $<TARGET_FILE:${PROJECT_NAME}_tests>
               --gtest_filter=SanitizerProof.DataRace)
     set_tests_properties(ProjectNestor.SanitizerProof.TSAN PROPERTIES
-      WILL_FAIL ON LABELS "sanitizer")
+      WILL_FAIL ON LABELS "sanitizer"
+      ENVIRONMENT "TSAN_OPTIONS=abort_on_error=0:halt_on_error=1")
   endif()
 endif()
