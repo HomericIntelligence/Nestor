@@ -51,3 +51,176 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  package:
+    name: package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+
+      - name: Read project version
+        id: version
+        run: |
+          set -euo pipefail
+          v=$(python3 -c "
+          import re
+          cmake = open('CMakeLists.txt').read()
+          m = re.search(r'VERSION\s+([0-9]+\.[0-9]+\.[0-9]+)', cmake)
+          assert m, 'no semver VERSION found in CMakeLists.txt'
+          print(m.group(1))
+          ")
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "Packaging ProjectNestor v$v"
+
+      - uses: docker/setup-qemu-action@49b3bc8e6bdd4a60e6116a5414239cba5943d3cf  # v3.2.0
+      - uses: docker/setup-buildx-action@988b5a0280414f521da01fcc63a27aeeb4b104db  # v3.6.1
+
+      - name: Build distributable image (single-arch, no push)
+        uses: docker/build-push-action@5cd11c3a4ced054e52742c5fd54dca954e0edd85  # v6.7.0
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: projectnestor:${{ steps.version.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Export image tarball artifact
+        run: |
+          set -euo pipefail
+          out="projectnestor-${{ steps.version.outputs.version }}-amd64.tar"
+          docker save "projectnestor:${{ steps.version.outputs.version }}" -o "$out"
+          ls -lh "$out"
+          echo "TARBALL=$out" >> "$GITHUB_ENV"
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: projectnestor-image-amd64
+          path: ${{ env.TARBALL }}
+          retention-days: 14
+
+  install:
+    name: install
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    needs: [package]
+    permissions:
+      contents: read
+    steps:
+      - name: Download package artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          name: projectnestor-image-amd64
+
+      - name: Load image
+        id: load
+        run: |
+          set -euo pipefail
+          tar=$(ls projectnestor-*-amd64.tar)
+          docker load -i "$tar"
+          # Resolve the loaded image ref deterministically from the local store.
+          img=$(docker images --format '{{.Repository}}:{{.Tag}}' \
+            | grep '^projectnestor:' | head -1)
+          if [ -z "$img" ]; then
+            echo "::error::no projectnestor image found after docker load"
+            exit 1
+          fi
+          echo "image=$img" >> "$GITHUB_OUTPUT"
+          echo "Loaded $img"
+
+      - name: Clean-install smoke run (detached + health poll)
+        env:
+          IMAGE: ${{ steps.load.outputs.image }}
+        run: |
+          set -euo pipefail
+
+          cleanup() {
+            if [ -n "${cid:-}" ] && [ -n "$(docker ps -aq --filter "id=$cid")" ]; then
+              docker rm -f "$cid" >/dev/null
+            fi
+          }
+          trap cleanup EXIT
+
+          # Run the packaged image with no prior state — a true clean install.
+          cid=$(docker run -d \
+            -e NATS_URL=nats://invalid.local:4222 \
+            -p 18081:8081 \
+            "$IMAGE")
+
+          ok=0
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:18081/v1/health >/dev/null; then
+              ok=1
+              echo "health OK on attempt $i"
+              break
+            fi
+            sleep 1
+          done
+
+          if [ "$ok" -ne 1 ]; then
+            echo "packaged image did not serve /v1/health within 30s; logs:"
+            docker logs "$cid"
+            exit 1
+          fi
+          echo "install smoke OK"
+
+  release:
+    name: release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # Release machinery is tag-driven (semver tags publish to GHCR). This job
+    # is a DRY-RUN: it validates version/changelog consistency on every push
+    # and PR, and on a tag verifies the tag matches the source version. It
+    # NEVER publishes — publication is handled by the `build` job on tag push.
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          fetch-depth: 0
+
+      - name: Validate version + changelog (dry run, no publish)
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          set -euo pipefail
+
+          version=$(python3 -c "
+          import re
+          cmake = open('CMakeLists.txt').read()
+          m = re.search(r'VERSION\s+([0-9]+\.[0-9]+\.[0-9]+)', cmake)
+          assert m, 'no semver VERSION found in CMakeLists.txt'
+          print(m.group(1))
+          ")
+          echo "Source version: $version"
+
+          # CHANGELOG must exist and carry an Unreleased section plus a heading
+          # for the current source version (or it is still under Unreleased).
+          test -f CHANGELOG.md || { echo "::error::CHANGELOG.md missing"; exit 1; }
+          grep -qE '^\#\# \[Unreleased\]' CHANGELOG.md || {
+            echo "::error::CHANGELOG.md missing an [Unreleased] section"; exit 1; }
+
+          # On a tag build, the tag (vX.Y.Z) must match the source version and
+          # the CHANGELOG must contain a matching released section.
+          if [ "$REF_TYPE" = "tag" ]; then
+            tag_version="${REF_NAME#v}"
+            if [ "$tag_version" != "$version" ]; then
+              echo "::error::tag $REF_NAME does not match source version $version"
+              exit 1
+            fi
+            if ! grep -qE "^\#\# \[$version\]" CHANGELOG.md; then
+              echo "::error::CHANGELOG.md has no released section for [$version]"
+              exit 1
+            fi
+            echo "Tag $REF_NAME validated against source version $version"
+          else
+            echo "Non-tag build: version/changelog structure validated (dry run)."
+          fi
+          echo "release dry-run OK (no artifacts published)"

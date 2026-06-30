@@ -238,6 +238,36 @@ jobs:
             cd ../..
           done
 
+  test:
+    name: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    needs: [unit-tests, integration-tests, concurrency-tests]
+    if: always()
+    steps:
+      - name: Aggregate test results
+        # Canonical `test` check for the Odysseus board. Re-emits the combined
+        # status of the unit/integration/concurrency sub-checks (which are kept
+        # as separate check-runs). No `|| true`: any non-success fails fast.
+        run: |
+          set -euo pipefail
+          rc=0
+          for r in \
+            "unit-tests=${{ needs.unit-tests.result }}" \
+            "integration-tests=${{ needs.integration-tests.result }}" \
+            "concurrency-tests=${{ needs.concurrency-tests.result }}"; do
+            name=${r%%=*}
+            result=${r#*=}
+            if [ "$result" != "success" ]; then
+              echo "::error::$name did not succeed (result: $result)"
+              rc=1
+            fi
+          done
+          if [ "$rc" -ne 0 ]; then
+            exit 1
+          fi
+          echo "All test sub-checks passed"
+
   security-dependency-scan:
     name: security/dependency-scan
     runs-on: ubuntu-24.04
