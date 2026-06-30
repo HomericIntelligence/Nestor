@@ -1,5 +1,9 @@
 # ProjectNestor
 
+[![Build & Test](https://github.com/HomericIntelligence/ProjectNestor/actions/workflows/build-test.yml/badge.svg)](https://github.com/HomericIntelligence/ProjectNestor/actions/workflows/build-test.yml)
+[![Code Coverage](https://github.com/HomericIntelligence/ProjectNestor/actions/workflows/code-coverage.yml/badge.svg)](https://github.com/HomericIntelligence/ProjectNestor/actions/workflows/code-coverage.yml)
+[![Static Analysis](https://github.com/HomericIntelligence/ProjectNestor/actions/workflows/static-analysis.yml/badge.svg)](https://github.com/HomericIntelligence/ProjectNestor/actions/workflows/static-analysis.yml)
+
 Research, ideation, and search for the HomericIntelligence distributed agent mesh.
 
 Part of [Odysseus](https://github.com/HomericIntelligence/Odysseus) — the HomericIntelligence meta-repo.
