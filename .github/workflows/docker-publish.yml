@@ -151,6 +151,7 @@ jobs:
           cid=$(docker run -d \
             -e NATS_URL=nats://invalid.local:4222 \
             -e NESTOR_AUTH_TOKEN=ci-smoke-only-token \
+            -e NESTOR_BIND_ADDR=0.0.0.0 \
             -p 18081:8081 \
             "$IMAGE")
 

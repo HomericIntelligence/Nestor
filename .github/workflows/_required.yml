@@ -546,9 +546,12 @@ jobs:
           # NESTOR_AUTH_TOKEN: the server is fail-secure (auth mode defaults
           # to 'required') and exits at startup without a token; a throwaway
           # value keeps the smoke test about routes, not auth.
+          # NESTOR_BIND_ADDR: the loopback-only default cannot be reached
+          # through the published port from the runner.
           cid=$(docker run -d \
             -e NATS_URL=nats://invalid.local:4222 \
             -e NESTOR_AUTH_TOKEN=ci-smoke-only-token \
+            -e NESTOR_BIND_ADDR=0.0.0.0 \
             -p 18081:8081 \
             projectnestor:ci)
 
