@@ -1,6 +1,9 @@
 FROM ubuntu@sha256:c4a8d5503dfb2a3eb8ab5f807da5bc69a85730fb49b5cfca2330194ebcc41c7b AS builder
 # ubuntu:24.04 — pinned for reproducible builds (#60)
 
+# apt packages unpinned on purpose: the base image digest above is the
+# version lock (same policy as AchaeanFleet's fleet-wide hadolint config).
+# hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
     cmake \
     ninja-build \
@@ -52,6 +55,7 @@ RUN cmake -B build -G Ninja \
 FROM ubuntu@sha256:c4a8d5503dfb2a3eb8ab5f807da5bc69a85730fb49b5cfca2330194ebcc41c7b
 # ubuntu:24.04 — pinned for reproducible builds (#60)
 
+# hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl3 \
     wget \
