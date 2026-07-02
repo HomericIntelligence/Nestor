@@ -560,7 +560,7 @@ jobs:
           # started and registered routes — independent of NATS state.
           ok=0
           for i in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:18081/v1/health >/dev/null; then
+            if curl -fsS -H "Authorization: Bearer ci-smoke-only-token" http://127.0.0.1:18081/v1/health >/dev/null; then
               ok=1
               echo "health OK on attempt $i"
               break
