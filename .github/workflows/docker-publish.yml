@@ -150,6 +150,7 @@ jobs:
           # Run the packaged image with no prior state — a true clean install.
           cid=$(docker run -d \
             -e NATS_URL=nats://invalid.local:4222 \
+            -e NESTOR_AUTH_TOKEN=ci-smoke-only-token \
             -p 18081:8081 \
             "$IMAGE")
 

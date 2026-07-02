@@ -410,7 +410,9 @@ jobs:
         if: steps.detect.outputs.skip == 'false'
         uses: prefix-dev/setup-pixi@5185adfbffb4bd703da3010310260805d89ebb11  # v0.9.6
         with:
-          pixi-version: v0.67.2
+          # pixi.lock is format v7 (written by newer local pixi); v0.67.2 only
+          # reads up to v6 and the job fails before any check runs.
+          pixi-version: v0.72.0
           cache: false
       - name: pixi install (locked)
         if: steps.detect.outputs.skip == 'false'
@@ -541,8 +543,12 @@ jobs:
           }
           trap cleanup EXIT
 
+          # NESTOR_AUTH_TOKEN: the server is fail-secure (auth mode defaults
+          # to 'required') and exits at startup without a token; a throwaway
+          # value keeps the smoke test about routes, not auth.
           cid=$(docker run -d \
             -e NATS_URL=nats://invalid.local:4222 \
+            -e NESTOR_AUTH_TOKEN=ci-smoke-only-token \
             -p 18081:8081 \
             projectnestor:ci)
 
