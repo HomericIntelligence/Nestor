@@ -6,6 +6,7 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 
 #include "httplib.h"
 #include "nlohmann/json.hpp"
@@ -48,6 +49,47 @@ std::optional<std::string> validate_research_body(const json& b) {
   return std::nullopt;
 }
 }  // namespace
+
+// ── HMAS mesh wire helpers (Odysseus ADR-013 §7) ─────────────────────────────
+
+std::string research_dispatch_subject(const std::string& id) {
+  return "hi.myrmidon.research.chief-architect.task." + id;
+}
+
+json research_dispatch_payload(const json& body, const std::string& id,
+                               const std::string& trace_id) {
+  // hi/v1 envelope: pointers plus idea/context inline (no issue exists yet).
+  return json{
+      {"schema", "hi/v1"},
+      {"msg_id", id},
+      {"task_id", id},
+      {"intake_id", id},
+      {"team_id", "mesh"},
+      {"domain", "research"},
+      {"role", "chief-architect"},
+      {"idea", body.value("idea", "")},
+      {"context", body.value("context", "")},
+      {"repo", body.value("repo", "")},
+      {"trace_id", trace_id},
+  };
+}
+
+bool handle_research_status(Store& store, const std::string& subject, const std::string& payload) {
+  constexpr std::string_view kPrefix = "hi.research.";
+  if (subject.size() <= kPrefix.size() || subject.compare(0, kPrefix.size(), kPrefix) != 0) {
+    return false;
+  }
+  const std::string id = subject.substr(kPrefix.size());
+  if (id.find('.') != std::string::npos) {
+    return false;  // only direct hi.research.{id} status subjects
+  }
+  const auto body = json::parse(payload, nullptr, false);
+  if (body.is_discarded() || body.value("status", "") != "completed") {
+    return false;
+  }
+  const json updated = store.complete_research(id, body.value("metadata", json::object()));
+  return !updated.contains("error");
+}
 
 void register_routes(httplib::Server& server, Store& store, NatsClient& nats,
                      RateLimiter& limiter) {
@@ -181,6 +223,12 @@ void register_routes(httplib::Server& server, Store& store, NatsClient& nats,
     payload["status"] = "pending";
     payload["trace_id"] = ctx.trace_id;
     np->publish(subject, payload.dump());
+
+    // Role-addressed research-pool dispatch (Odysseus ADR-013 §7). Research
+    // myrmidons consume this durable work queue; hi.research.<id> above stays
+    // the status/compat subject.
+    np->publish(research_dispatch_subject(id),
+                research_dispatch_payload(body, id, ctx.trace_id).dump());
 
     // Structured log: hi.logs.nestor.research_submitted (ADR-005).
     np->publish_log("hi.logs.nestor.research_submitted", "info",

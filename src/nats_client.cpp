@@ -36,6 +36,32 @@ void NatsClient::shim_closed(__natsConnection* /*nc*/, void* closure) {
   static_cast<NatsClient*>(closure)->on_closed();
 }
 
+void NatsClient::shim_research_message(__natsConnection* /*nc*/, __natsSubscription* /*sub*/,
+                                       __natsMsg* msg, void* closure) {
+  auto* self = static_cast<NatsClient*>(closure);
+  auto* m = reinterpret_cast<natsMsg*>(msg);
+  // research_handler_ is immutable after connect() — safe to read unlocked
+  // on this nats.c delivery thread. Never perform JetStream RPCs here.
+  if (self->research_handler_) {
+    const char* subject = natsMsg_GetSubject(m);
+    const char* data = natsMsg_GetData(m);
+    const int len = natsMsg_GetDataLength(m);
+    try {
+      self->research_handler_(std::string(subject != nullptr ? subject : ""),
+                              std::string(data != nullptr ? data : "", static_cast<size_t>(len)));
+    } catch (const std::exception& e) {
+      std::cerr << "[NatsClient] research status handler threw: " << e.what() << "\n";
+    }
+  }
+  natsMsg_Destroy(m);
+}
+
+// ─── set_research_status_handler() ───────────────────────────────────────────
+
+void NatsClient::set_research_status_handler(MessageHandler handler) {
+  research_handler_ = std::move(handler);
+}
+
 // ─── Callback handlers ────────────────────────────────────────────────────────
 
 void NatsClient::on_disconnected() {
@@ -249,6 +275,9 @@ bool NatsClient::provision_jetstream_locked() {
   // Provision streams (idempotent).
   ensure_streams();
 
+  // (Re)create the core research-status subscription (ADR-013 §7).
+  resubscribe_research_locked();
+
   return true;
 }
 
@@ -284,6 +313,10 @@ void NatsClient::close() {
   // Step 4: destroy resources in correct order.
   {
     std::scoped_lock lk(state_mu_);
+    if (research_sub_ != nullptr) {
+      natsSubscription_Destroy(reinterpret_cast<natsSubscription*>(research_sub_));
+      research_sub_ = nullptr;
+    }
     if (js_ != nullptr) {
       jsCtx_Destroy(reinterpret_cast<jsCtx*>(js_));
       js_ = nullptr;
@@ -316,29 +349,69 @@ void NatsClient::ensure_streams() {
     return;
   }
 
-  jsStreamConfig cfg;
-  jsStreamConfig_Init(&cfg);
-  cfg.Name = "homeric-research";
-  const char* subjects[] = {"hi.research.>"};
-  cfg.Subjects = subjects;
-  cfg.SubjectsLen = 1;
-  cfg.Retention = js_WorkQueuePolicy;
-  cfg.Storage = js_FileStorage;
+  struct StreamDef {
+    const char* name;
+    const char* subject;
+    jsRetentionPolicy retention;
+  };
+  // homeric-myrmidon backs the role-addressed dispatch queues (ADR-013 §1);
+  // Agamemnon ensures the same stream — creation is idempotent and an
+  // already-exists answer (even with a different config) is non-fatal.
+  static const StreamDef kStreams[] = {
+      {"homeric-research", "hi.research.>", js_WorkQueuePolicy},
+      {"homeric-myrmidon", "hi.myrmidon.>", js_LimitsPolicy},
+  };
 
-  jsStreamInfo* si = nullptr;
-  jsErrCode jerr = static_cast<jsErrCode>(0);
-  const natsStatus s = js_AddStream(&si, js_, &cfg, nullptr, &jerr);
+  for (const auto& sd : kStreams) {
+    jsStreamConfig cfg;
+    jsStreamConfig_Init(&cfg);
+    cfg.Name = sd.name;
+    const char* subjects[] = {sd.subject};
+    cfg.Subjects = subjects;
+    cfg.SubjectsLen = 1;
+    cfg.Retention = sd.retention;
+    cfg.Storage = js_FileStorage;
 
-  if (s == NATS_OK) {
-    jsStreamInfo_Destroy(si);
-    std::cout << "[NatsClient] Stream 'homeric-research' created.\n";
-  } else if (s == NATS_ERR) {
-    // Stream already exists — non-fatal.
-    std::cout << "[NatsClient] Stream 'homeric-research' exists.\n";
-  } else {
-    std::cerr << "[NatsClient] Failed to create stream 'homeric-research': "
-              << natsStatus_GetText(s) << " (jerr=" << jerr << ")\n";
+    jsStreamInfo* si = nullptr;
+    jsErrCode jerr = static_cast<jsErrCode>(0);
+    const natsStatus s = js_AddStream(&si, js_, &cfg, nullptr, &jerr);
+
+    if (s == NATS_OK) {
+      jsStreamInfo_Destroy(si);
+      std::cout << "[NatsClient] Stream '" << sd.name << "' created.\n";
+    } else if (s == NATS_ERR) {
+      // Stream already exists — non-fatal.
+      std::cout << "[NatsClient] Stream '" << sd.name << "' exists.\n";
+    } else {
+      std::cerr << "[NatsClient] Failed to create stream '" << sd.name
+                << "': " << natsStatus_GetText(s) << " (jerr=" << jerr << ")\n";
+    }
   }
+}
+
+// ─── resubscribe_research_locked() ───────────────────────────────────────────
+// Caller holds state_mu_. Destroys any prior subscription and creates a fresh
+// core (non-JetStream) subscription on hi.research.> for status updates.
+
+void NatsClient::resubscribe_research_locked() {
+  if (!research_handler_ || conn_ == nullptr) {
+    return;
+  }
+  if (research_sub_ != nullptr) {
+    natsSubscription_Destroy(reinterpret_cast<natsSubscription*>(research_sub_));
+    research_sub_ = nullptr;
+  }
+  natsSubscription* sub = nullptr;
+  const natsStatus s = natsConnection_Subscribe(
+      &sub, reinterpret_cast<natsConnection*>(conn_), "hi.research.>",
+      reinterpret_cast<natsMsgHandler>(NatsClient::shim_research_message), this);
+  if (s != NATS_OK) {
+    std::cerr << "[NatsClient] Subscribe to hi.research.> failed: " << natsStatus_GetText(s)
+              << "\n";
+    return;
+  }
+  research_sub_ = sub;
+  std::cout << "[NatsClient] Subscribed to hi.research.> (status updates).\n";
 }
 
 // ─── publish() ───────────────────────────────────────────────────────────────
