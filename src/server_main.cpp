@@ -130,6 +130,14 @@ int main() {
   projectnestor::Store store(max_items, std::chrono::seconds{pending_ttl_seconds});
   projectnestor::NatsClient nats(nats_url);
 
+  // Close store items when a research myrmidon publishes a terminal status on
+  // hi.research.{id} (Odysseus ADR-013 §7). Must be registered before
+  // connect(); runs on a nats.c delivery thread (Store is mutex-guarded).
+  nats.set_research_status_handler(
+      [&store](const std::string& subject, const std::string& payload) {
+        projectnestor::handle_research_status(store, subject, payload);
+      });
+
   // Graceful degradation: server runs even if NATS is unavailable at startup.
   // On connect() failure the client starts a background reconnect loop; JetStream
   // provisioning (including ensure_streams()) is handled by the provisioner thread.

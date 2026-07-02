@@ -6,6 +6,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -13,9 +14,11 @@
 #include "nats.h"
 #include "nlohmann/json.hpp"
 
-// Forward-declare the opaque nats.c connection type so we can declare the
-// callback shims without pulling in the entire nats.h in this header.
+// Forward-declare the opaque nats.c types so we can declare the callback
+// shims without pulling in the entire nats.h in this header.
 struct __natsConnection;
+struct __natsSubscription;
+struct __natsMsg;
 
 namespace projectnestor {
 
@@ -55,12 +58,29 @@ class NatsClient {
   void publish_log(const std::string& subject, const std::string& level, const std::string& message,
                    const nlohmann::json& metadata, const std::string& trace_id = "");
 
+  // Handler for research status messages delivered on hi.research.> (core
+  // NATS subscription, not JetStream). Invoked on a nats.c delivery thread —
+  // the handler must be thread-safe and must not perform JetStream RPCs.
+  using MessageHandler =
+      std::function<void(const std::string& subject, const std::string& payload)>;
+
+  // Register the research-status handler. MUST be called before connect();
+  // the provisioner (re)creates the subscription after every (re)connect
+  // (Odysseus ADR-013 §7: externally-published completed status closes the
+  // store item).
+  void set_research_status_handler(MessageHandler handler);
+
  private:
   // ── connection state ──────────────────────────────────────────────────────
   std::string url_;
   natsOptions* opts_ = nullptr;
   natsConnection* conn_ = nullptr;
   jsCtx* js_ = nullptr;
+  natsSubscription* research_sub_ = nullptr;
+
+  // Immutable after connect() (set_research_status_handler documents the
+  // before-connect contract), so the delivery-thread shim reads it unlocked.
+  MessageHandler research_handler_;
 
   // Atomic flag; written only by callbacks, close(), and try_connect_once().
   std::atomic<bool> connected_{false};
@@ -119,6 +139,14 @@ class NatsClient {
   static void shim_disconnected(__natsConnection* nc, void* closure);
   static void shim_reconnected(__natsConnection* nc, void* closure);
   static void shim_closed(__natsConnection* nc, void* closure);
+
+  // Shim matching natsMsgHandler:
+  //   void (*)(natsConnection*, natsSubscription*, natsMsg*, void* closure)
+  static void shim_research_message(__natsConnection* nc, __natsSubscription* sub, __natsMsg* msg,
+                                    void* closure);
+
+  // (Re)create the core hi.research.> subscription. Caller holds state_mu_.
+  void resubscribe_research_locked();
 };
 
 }  // namespace projectnestor

@@ -730,4 +730,54 @@ TEST_F(RoutesTest, CompleteResearchReferencesNonStringReturns400) {
   EXPECT_EQ(body["detail"], "references must be an array of strings");
 }
 
+// ── HMAS mesh wire helpers (Odysseus ADR-013 §7) ─────────────────────────────
+
+TEST(MeshWireHelpers, ResearchDispatchSubjectIsRoleAddressed) {
+  EXPECT_EQ(research_dispatch_subject("abc-123"),
+            "hi.myrmidon.research.chief-architect.task.abc-123");
+}
+
+TEST(MeshWireHelpers, ResearchDispatchPayloadCarriesEnvelopeAndIdeaInline) {
+  const json body = {{"idea", "build the slice"}, {"context", "ctx"}, {"repo", "o/r"}};
+  const json payload = research_dispatch_payload(body, "id-1", "trace-9");
+  EXPECT_EQ(payload["schema"], "hi/v1");
+  EXPECT_EQ(payload["task_id"], "id-1");
+  EXPECT_EQ(payload["intake_id"], "id-1");
+  EXPECT_EQ(payload["domain"], "research");
+  EXPECT_EQ(payload["role"], "chief-architect");
+  EXPECT_EQ(payload["idea"], "build the slice");
+  EXPECT_EQ(payload["context"], "ctx");
+  EXPECT_EQ(payload["repo"], "o/r");
+  EXPECT_EQ(payload["trace_id"], "trace-9");
+}
+
+TEST(MeshWireHelpers, HandleResearchStatusCompletesPendingItem) {
+  Store store(16, std::chrono::seconds{3600});
+  const json item = store.submit_research(json{{"idea", "x"}});
+  const std::string id = item["id"].get<std::string>();
+
+  const std::string payload = R"({"status":"completed","metadata":{"epic":7}})";
+  EXPECT_TRUE(handle_research_status(store, "hi.research." + id, payload));
+  // Completed items are erased eagerly — a second completion finds nothing.
+  EXPECT_FALSE(handle_research_status(store, "hi.research." + id, payload));
+}
+
+TEST(MeshWireHelpers, HandleResearchStatusIgnoresNonTerminalAndForeignSubjects) {
+  Store store(16, std::chrono::seconds{3600});
+  const json item = store.submit_research(json{{"idea", "x"}});
+  const std::string id = item["id"].get<std::string>();
+
+  // Pending (non-completed) status is ignored.
+  EXPECT_FALSE(handle_research_status(store, "hi.research." + id, R"({"status":"pending"})"));
+  // Nested subjects and foreign prefixes are ignored.
+  EXPECT_FALSE(
+      handle_research_status(store, "hi.research." + id + ".sub", R"({"status":"completed"})"));
+  EXPECT_FALSE(handle_research_status(store, "hi.tasks.t." + id, R"({"status":"completed"})"));
+  // Malformed payloads and unknown ids are ignored.
+  EXPECT_FALSE(handle_research_status(store, "hi.research." + id, "not json"));
+  EXPECT_FALSE(handle_research_status(store, "hi.research.unknown", R"({"status":"completed"})"));
+  // The pending item is still completable afterwards.
+  EXPECT_TRUE(handle_research_status(store, "hi.research." + id, R"({"status":"completed"})"));
+}
+
 }  // namespace projectnestor::test
