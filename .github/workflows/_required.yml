@@ -238,11 +238,46 @@ jobs:
             cd ../..
           done
 
+  nats-integration-tests:
+    name: nats-integration-tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+      - name: Conan install (Release)
+        uses: ./.github/actions/conan-install
+        with:
+          build-type: Release
+      - name: Configure
+        run: cmake --preset release
+      - name: Build
+        run: cmake --build --preset release
+      - name: Start NATS broker (JetStream)
+        run: docker compose -f test/docker/docker-compose.nats.yml up -d --wait
+      - name: Run live-broker NATS tests
+        # Separate from the unit coverage gate (issue #119): exercises the
+        # LCOV-excluded live-broker regions of src/nats_client.cpp against a
+        # real NATS+JetStream broker. With NESTOR_LIVE_NATS_URL set, an
+        # unreachable broker is a hard test failure — no silent pass.
+        # --no-tests=error: a label typo must fail the job, not pass silently.
+        env:
+          NESTOR_LIVE_NATS_URL: nats://127.0.0.1:4222
+          NESTOR_LIVE_NATS_COMPOSE: ${{ github.workspace }}/test/docker/docker-compose.nats.yml
+        run: |
+          cd build/release
+          ctest --output-on-failure -L live-nats --no-tests=error
+      - name: Stop NATS broker
+        if: always()
+        run: docker compose -f test/docker/docker-compose.nats.yml down -v
+
   test:
     name: test
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    needs: [unit-tests, integration-tests, concurrency-tests]
+    needs: [unit-tests, integration-tests, concurrency-tests, nats-integration-tests]
     if: always()
     steps:
       - name: Aggregate test results
@@ -255,7 +290,8 @@ jobs:
           for r in \
             "unit-tests=${{ needs.unit-tests.result }}" \
             "integration-tests=${{ needs.integration-tests.result }}" \
-            "concurrency-tests=${{ needs.concurrency-tests.result }}"; do
+            "concurrency-tests=${{ needs.concurrency-tests.result }}" \
+            "nats-integration-tests=${{ needs.nats-integration-tests.result }}"; do
             name=${r%%=*}
             result=${r#*=}
             if [ "$result" != "success" ]; then

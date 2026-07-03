@@ -7,6 +7,7 @@ add_executable(${PROJECT_NAME}_tests
   src/test_store.cpp
   src/test_store_concurrent.cpp
   src/test_nats_client.cpp
+  src/test_nats_client_live.cpp
   src/test_reconnect_policy.cpp
   src/test_routes.cpp
   src/test_auth.cpp
@@ -65,7 +66,7 @@ if("thread" IN_LIST ${PROJECT_NAME}_SANITIZER)
 else()
   gtest_discover_tests(${PROJECT_NAME}_tests
     DISCOVERY_MODE PRE_TEST
-    TEST_FILTER "*-*Routes*:*StoreConcurrency*:SanitizerProof.*"
+    TEST_FILTER "*-*Routes*:*StoreConcurrency*:SanitizerProof.*:*NatsClientLive*"
     PROPERTIES LABELS "unit"
   )
   gtest_discover_tests(${PROJECT_NAME}_tests
@@ -79,6 +80,18 @@ else()
     TEST_FILTER "*StoreConcurrency*"
     TEST_PREFIX "concurrency."
     PROPERTIES LABELS "concurrency"
+  )
+  # Live-broker NATS tests (issue #119): run by the nats-integration-tests CI
+  # job, or locally with test/docker/docker-compose.nats.yml up. The tests
+  # self-skip when NESTOR_LIVE_NATS_URL is unset, so including them in the
+  # default ctest presets is safe. RUN_SERIAL keeps the broker-bounce tests
+  # from interleaving with other live tests under `ctest -j N` — they all
+  # share one broker.
+  gtest_discover_tests(${PROJECT_NAME}_tests
+    DISCOVERY_MODE PRE_TEST
+    TEST_FILTER "*NatsClientLive*"
+    TEST_PREFIX "live."
+    PROPERTIES LABELS "live-nats" TIMEOUT 180 RUN_SERIAL TRUE
   )
 endif()
 

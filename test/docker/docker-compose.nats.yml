@@ -1,0 +1,25 @@
+name: nestor-nats-test
+
+# Live-broker NATS + JetStream instance for the NatsClientLiveTest suite
+# (test/src/test_nats_client_live.cpp) and the nats-integration-tests CI job.
+#
+#   docker compose -f test/docker/docker-compose.nats.yml up -d --wait
+#
+# Host ports are overridable so the broker can coexist with a developer's
+# local NATS instance (defaults preserve the standard ports):
+#   NESTOR_NATS_TEST_PORT=14222 NESTOR_NATS_TEST_MON_PORT=18222 docker compose ...
+# When overriding, point the test suite at the same port via
+# NESTOR_LIVE_NATS_URL=nats://127.0.0.1:14222.
+services:
+  nats:
+    # Tag managed by Renovate; -js enables JetStream, -m exposes /healthz.
+    image: nats:2.12-alpine
+    command: ["-js", "-m", "8222"]
+    ports:
+      - "${NESTOR_NATS_TEST_PORT:-4222}:4222"
+      - "${NESTOR_NATS_TEST_MON_PORT:-8222}:8222"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8222/healthz"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
