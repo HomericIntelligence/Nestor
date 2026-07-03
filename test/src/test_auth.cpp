@@ -62,12 +62,12 @@ void AuthTest::TearDown() {
 
 // ── Test Group 1: Missing Authorization Header ───────────────────────────────
 
-TEST_F(AuthTest, MissingAuthHeaderOnHealthReturns401) {
+TEST_F(AuthTest, NoAuthHeaderOnHealthReturns200) {
   const auto res = client_->Get("/v1/health");
   ASSERT_TRUE(res);
-  EXPECT_EQ(res->status, 401);
+  EXPECT_EQ(res->status, 200);
   const auto body = json::parse(res->body);
-  EXPECT_EQ(body["detail"], "unauthorized");
+  EXPECT_EQ(body["status"], "ok");
 }
 
 TEST_F(AuthTest, MissingAuthHeaderOnStatsReturns401) {
@@ -95,7 +95,7 @@ TEST_F(AuthTest, MissingAuthHeaderOnCompleteReturns401) {
 
 TEST_F(AuthTest, WrongBearerTokenReturns401) {
   httplib::Headers headers{{"Authorization", "Bearer wrong-token"}};
-  const auto res = client_->Get("/v1/health", headers);
+  const auto res = client_->Get("/v1/research/stats", headers);
   ASSERT_TRUE(res);
   EXPECT_EQ(res->status, 401);
   const auto body = json::parse(res->body);
@@ -106,41 +106,59 @@ TEST_F(AuthTest, WrongBearerTokenReturns401) {
 
 TEST_F(AuthTest, BasicAuthReturns401) {
   httplib::Headers headers{{"Authorization", "Basic dXNlcjpwYXNz"}};
-  const auto res = client_->Get("/v1/health", headers);
+  const auto res = client_->Get("/v1/research/stats", headers);
   ASSERT_TRUE(res);
   EXPECT_EQ(res->status, 401);
 }
 
 TEST_F(AuthTest, BearerWithoutTokenReturns401) {
   httplib::Headers headers{{"Authorization", "Bearer"}};
-  const auto res = client_->Get("/v1/health", headers);
+  const auto res = client_->Get("/v1/research/stats", headers);
   ASSERT_TRUE(res);
   EXPECT_EQ(res->status, 401);
 }
 
 TEST_F(AuthTest, LowercaseBearerSchemeReturns401) {
   httplib::Headers headers{{"Authorization", "bearer test-token"}};
-  const auto res = client_->Get("/v1/health", headers);
+  const auto res = client_->Get("/v1/research/stats", headers);
   ASSERT_TRUE(res);
   EXPECT_EQ(res->status, 401);
 }
 
 TEST_F(AuthTest, BearerTokenWithEmbeddedWhitespaceReturns401) {
   httplib::Headers headers{{"Authorization", "Bearer test token"}};
-  const auto res = client_->Get("/v1/health", headers);
+  const auto res = client_->Get("/v1/research/stats", headers);
   ASSERT_TRUE(res);
   EXPECT_EQ(res->status, 401);
 }
 
 // ── Test Group 4: Correct Bearer Token ────────────────────────────────────
 
-TEST_F(AuthTest, CorrectBearerTokenOnHealthReturns200) {
-  httplib::Headers headers{{"Authorization", "Bearer test-token"}};
-  const auto res = client_->Get("/v1/health", headers);
+TEST_F(AuthTest, HealthWithQueryStringStillReturns200) {
+  // Regression: cpp-httplib strips query string from req.path
+  // (httplib.h:6387-6393), so allowlist exact-match handles
+  // probes like ?probe=1 or ?cache_bust=N.
+  const auto res = client_->Get("/v1/health?probe=1&cache_bust=42");
   ASSERT_TRUE(res);
   EXPECT_EQ(res->status, 200);
-  const auto body = json::parse(res->body);
-  EXPECT_EQ(body["status"], "ok");
+}
+
+TEST_F(AuthTest, MissingAuthHeaderEmitsWwwAuthenticateChallenge) {
+  // RFC 9110 §11.6.1: 401 responses MUST include WWW-Authenticate.
+  const auto res = client_->Get("/v1/research/stats");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->status, 401);
+  ASSERT_TRUE(res->has_header("WWW-Authenticate"));
+  EXPECT_EQ(res->get_header_value("WWW-Authenticate"), R"(Bearer realm="nestor")");
+}
+
+TEST_F(AuthTest, WrongTokenAlsoEmitsWwwAuthenticateChallenge) {
+  httplib::Headers headers{{"Authorization", "Bearer wrong-token"}};
+  const auto res = client_->Get("/v1/research/stats", headers);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->status, 401);
+  ASSERT_TRUE(res->has_header("WWW-Authenticate"));
+  EXPECT_EQ(res->get_header_value("WWW-Authenticate"), R"(Bearer realm="nestor")");
 }
 
 TEST_F(AuthTest, CorrectBearerTokenOnStatsReturns200) {
