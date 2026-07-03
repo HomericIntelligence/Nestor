@@ -27,7 +27,9 @@ TEST(NatsClientTest, PublishWhenNotConnectedReturnsFalse) {
 
 TEST(NatsClientTest, EnsureStreamsWhenNotConnectedReturnsEarly) {
   NatsClient client("nats://localhost:4222");
-  client.ensure_streams();
+  // No JetStream context yet — must report failure, not vacuous success,
+  // so a null-js_ pass can never mark a generation provisioned.
+  EXPECT_FALSE(client.ensure_streams());
   EXPECT_FALSE(client.is_connected());
 }
 

@@ -45,9 +45,11 @@ class NatsClient {
   void close();
   [[nodiscard]] bool is_connected() const noexcept;
 
-  // Ensure the homeric-research JetStream stream exists.
+  // Ensure the homeric JetStream streams exist. Returns true when every
+  // stream was created or already exists (jsErrCode 10058); false on any
+  // other error so the provisioner retry path engages.
   // Called by the provisioner thread after each successful (re)connect.
-  void ensure_streams();
+  bool ensure_streams();
 
   // Publish payload to subject via JetStream.
   // Returns false if not connected or publish fails.
