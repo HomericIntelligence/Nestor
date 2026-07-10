@@ -272,13 +272,15 @@ bool NatsClient::provision_jetstream_locked() {
 
   js_ = new_js;
 
-  // Provision streams (idempotent).
-  ensure_streams();
+  // Provision streams (idempotent). Failure must reach provisioner_loop so
+  // its backoff retry engages — but the core research-status subscription is
+  // independent of stream provisioning, so (re)create it regardless.
+  const bool streams_ok = ensure_streams();
 
   // (Re)create the core research-status subscription (ADR-013 §7).
   resubscribe_research_locked();
 
-  return true;
+  return streams_ok;
 }
 
 // ─── close() ─────────────────────────────────────────────────────────────────
@@ -342,11 +344,13 @@ bool NatsClient::is_connected() const noexcept {
 // ─── ensure_streams() ────────────────────────────────────────────────────────
 // Idempotent — safe to call after every (re)connect.
 
-void NatsClient::ensure_streams() {
+bool NatsClient::ensure_streams() {
   // Must be called with state_mu_ held OR from provisioner_loop before js_ is
   // shared. In practice, provisioner_loop calls this while holding state_mu_.
   if (js_ == nullptr) {
-    return;
+    // "Ensure" did not ensure — never let a null context mark a generation
+    // provisioned.
+    return false;
   }
 
   struct StreamDef {
@@ -362,6 +366,7 @@ void NatsClient::ensure_streams() {
       {"homeric-myrmidon", "hi.myrmidon.>", js_LimitsPolicy},
   };
 
+  bool ok = true;
   for (const auto& sd : kStreams) {
     jsStreamConfig cfg;
     jsStreamConfig_Init(&cfg);
@@ -379,14 +384,19 @@ void NatsClient::ensure_streams() {
     if (s == NATS_OK) {
       jsStreamInfo_Destroy(si);
       std::cout << "[NatsClient] Stream '" << sd.name << "' created.\n";
-    } else if (s == NATS_ERR) {
-      // Stream already exists — non-fatal.
+    } else if (s == NATS_ERR && jerr == JSStreamNameExistErr) {
+      // Stream already exists (JetStream API error 10058) — non-fatal.
       std::cout << "[NatsClient] Stream '" << sd.name << "' exists.\n";
     } else {
+      // Any other error (subject overlap 10065, account limits, invalid
+      // config, timeouts) is a real provisioning failure — the provisioner
+      // must retry.
       std::cerr << "[NatsClient] Failed to create stream '" << sd.name
                 << "': " << natsStatus_GetText(s) << " (jerr=" << jerr << ")\n";
+      ok = false;
     }
   }
+  return ok;
 }
 
 // ─── resubscribe_research_locked() ───────────────────────────────────────────

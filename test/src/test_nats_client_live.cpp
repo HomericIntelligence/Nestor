@@ -277,6 +277,99 @@ TEST_F(NatsClientLiveTest, PublishLogDeliversStructuredJson) {
   client.close();
 }
 
+// ─── Provisioning-failure classification (issue #121) ────────────────────────
+
+// RAII owner of a raw broker-admin connection + jsCtx for manipulating
+// JetStream state out-of-band, plus guaranteed conflict-stream cleanup.
+class BrokerAdmin {
+ public:
+  explicit BrokerAdmin(const std::string& url) {
+    if (natsConnection_ConnectTo(&conn_, url.c_str()) == NATS_OK) {
+      jsOptions opts;
+      jsOptions_Init(&opts);
+      natsConnection_JetStream(&js_, conn_, &opts);
+    }
+  }
+  ~BrokerAdmin() {
+    if (js_ != nullptr) {
+      delete_stream(kConflictName);  // never leave the conflict behind
+      jsCtx_Destroy(js_);
+    }
+    if (conn_ != nullptr) {
+      natsConnection_Destroy(conn_);
+    }
+  }
+  BrokerAdmin(const BrokerAdmin&) = delete;
+  BrokerAdmin& operator=(const BrokerAdmin&) = delete;
+
+  bool ok() const { return js_ != nullptr; }
+
+  bool delete_stream(const char* name) {
+    jsErrCode jerr = static_cast<jsErrCode>(0);
+    const natsStatus s = js_DeleteStream(js_, name, nullptr, &jerr);
+    return s == NATS_OK || s == NATS_NOT_FOUND;
+  }
+
+  bool create_conflict_stream() {
+    jsStreamConfig cfg;
+    jsStreamConfig_Init(&cfg);
+    cfg.Name = kConflictName;
+    const char* subjects[] = {"hi.research.>"};
+    cfg.Subjects = subjects;
+    cfg.SubjectsLen = 1;
+    cfg.Storage = js_MemoryStorage;
+    jsStreamInfo* si = nullptr;
+    jsErrCode jerr = static_cast<jsErrCode>(0);
+    const natsStatus s = js_AddStream(&si, js_, &cfg, nullptr, &jerr);
+    jsStreamInfo_Destroy(si);
+    return s == NATS_OK;
+  }
+
+  bool stream_exists(const char* name) {
+    jsStreamInfo* si = nullptr;
+    jsErrCode jerr = static_cast<jsErrCode>(0);
+    const natsStatus s = js_GetStreamInfo(&si, js_, name, nullptr, &jerr);
+    jsStreamInfo_Destroy(si);
+    return s == NATS_OK;
+  }
+
+  static constexpr const char* kConflictName = "live-conflict-121";
+
+ private:
+  natsConnection* conn_ = nullptr;
+  jsCtx* js_ = nullptr;
+};
+
+// A subject-overlap conflict (jsErrCode 10065) must be classified as a real
+// provisioning failure — NOT "stream exists" — and the provisioner must keep
+// retrying until the conflict clears (issue #121). On the pre-fix code the
+// generation is marked provisioned on the first pass, homeric-research is
+// never created, and the final wait times out.
+TEST_F(NatsClientLiveTest, SubjectOverlapFailsProvisioningUntilConflictRemoved) {
+  BrokerAdmin admin(url_);
+  ASSERT_TRUE(admin.ok()) << "broker admin connection failed";
+  // Clear homeric-research so the conflict stream can capture hi.research.>.
+  ASSERT_TRUE(admin.delete_stream("homeric-research"));
+  ASSERT_TRUE(admin.create_conflict_stream());
+
+  NatsClient client(url_);
+  ASSERT_TRUE(client.connect());
+
+  // While the conflict holds hi.research.>, js_AddStream("homeric-research")
+  // returns NATS_ERR/10065 every attempt; the stream must stay absent.
+  EXPECT_FALSE(wait_for([&] { return admin.stream_exists("homeric-research"); }, 5s))
+      << "homeric-research appeared despite an overlapping conflict stream";
+
+  // Remove the conflict; the provisioner's backoff retry (cap 2s) must now
+  // succeed. Pre-fix code never retries, so this wait fails.
+  ASSERT_TRUE(admin.delete_stream(BrokerAdmin::kConflictName));
+  EXPECT_TRUE(wait_for([&] { return admin.stream_exists("homeric-research"); }, 30s))
+      << "provisioner did not retry and recreate homeric-research after the "
+         "conflict was removed — NATS_ERR misclassified as 'stream exists'";
+
+  client.close();
+}
+
 // ─── Broker-bounce tests (declaration order matters: these run last) ─────────
 
 // Covers on_disconnected()/on_reconnected() (library-level DisconnectedCB /
