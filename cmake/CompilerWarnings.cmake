@@ -17,7 +17,7 @@ function(set_project_warnings project_name)
     set(PROJECT_WARNINGS_CXX ${GCC_WARNINGS})
   endif()
 
-  if(ProjectNestor_WARNINGS_AS_ERRORS)
+  if(Nestor_WARNINGS_AS_ERRORS)
     if(MSVC)
       list(APPEND PROJECT_WARNINGS_CXX /WX)
     else()

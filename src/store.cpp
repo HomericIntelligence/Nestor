@@ -1,6 +1,6 @@
-// ProjectNestor store — in-memory research task state with UUID generation.
+// Nestor store — in-memory research task state with UUID generation.
 
-#include "projectnestor/store.hpp"
+#include "nestor/store.hpp"
 
 #include <array>
 #include <chrono>
@@ -10,7 +10,7 @@
 #include <sstream>
 #include <string_view>
 
-namespace projectnestor {
+namespace nestor {
 
 Store::Store(std::size_t max_items, std::chrono::seconds pending_ttl)
     : max_items_(max_items), pending_ttl_(pending_ttl) {}
@@ -167,4 +167,4 @@ json Store::list_research() const {
   return json{{"items", items}, {"count", items.size()}};
 }
 
-}  // namespace projectnestor
+}  // namespace nestor

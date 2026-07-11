@@ -1,13 +1,13 @@
-// ProjectNestor authentication implementation — C++20
+// Nestor authentication implementation — C++20
 
-#include "projectnestor/auth.hpp"
+#include "nestor/auth.hpp"
 
 #include <cstdlib>
 #include <cstring>
 #include <openssl/crypto.h>
 #include <string_view>
 
-namespace projectnestor {
+namespace nestor {
 
 namespace {
 
@@ -114,4 +114,4 @@ void install_auth_middleware(httplib::Server& server, const AuthConfig& cfg) {
   });
 }
 
-}  // namespace projectnestor
+}  // namespace nestor

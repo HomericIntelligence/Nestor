@@ -46,10 +46,10 @@ COPY test/ test/
 RUN cmake -B build -G Ninja \
     -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake \
     -DCMAKE_BUILD_TYPE=Release \
-    -DProjectNestor_BUILD_TESTING=OFF \
-    -DProjectNestor_ENABLE_CLANG_TIDY=OFF \
-    -DProjectNestor_ENABLE_CPPCHECK=OFF \
-    && cmake --build build --target ProjectNestor_server
+    -DNestor_BUILD_TESTING=OFF \
+    -DNestor_ENABLE_CLANG_TIDY=OFF \
+    -DNestor_ENABLE_CPPCHECK=OFF \
+    && cmake --build build --target Nestor_server
 
 # ── Runtime image ─────────────────────────────────────────────────────────────
 FROM ubuntu@sha256:c4a8d5503dfb2a3eb8ab5f807da5bc69a85730fb49b5cfca2330194ebcc41c7b
@@ -61,7 +61,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /src/build/ProjectNestor_server /usr/local/bin/ProjectNestor_server
+COPY --from=builder /src/build/Nestor_server /usr/local/bin/Nestor_server
 
 EXPOSE 8081
 
@@ -74,4 +74,4 @@ HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
 RUN useradd -r -s /usr/sbin/nologin nestor
 USER nestor
 
-CMD ["ProjectNestor_server"]
+CMD ["Nestor_server"]

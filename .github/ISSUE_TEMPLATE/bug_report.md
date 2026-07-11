@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Report a defect in ProjectNestor
+about: Report a defect in Nestor
 title: "[BUG] "
 labels: bug
 assignees: ''
@@ -29,7 +29,7 @@ response bodies.
 
 ## Environment
 
-- ProjectNestor version / commit SHA:
+- Nestor version / commit SHA:
 - OS / architecture:
 - Toolchain (compiler + version):
 - Build preset (debug / release / ci / coverage):

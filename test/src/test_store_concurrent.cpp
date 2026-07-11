@@ -1,4 +1,4 @@
-// test_store_concurrent.cpp — StoreConcurrencyTest suite for projectnestor::Store
+// test_store_concurrent.cpp — StoreConcurrencyTest suite for nestor::Store
 //
 // LOCKING INVARIANT (verified against src/store.cpp on main, issue #93):
 //   submit_research() inserts into research_items_ AND increments pending_
@@ -18,7 +18,7 @@
 // total operation count, that is a real bug per the "flag rather than mask"
 // principle (see HomericIntelligence team knowledge base).
 
-#include "projectnestor/store.hpp"
+#include "nestor/store.hpp"
 
 #include <atomic>
 #include <barrier>
@@ -28,7 +28,7 @@
 
 #include <gtest/gtest.h>
 
-namespace projectnestor::test {
+namespace nestor::test {
 
 namespace {
 
@@ -329,4 +329,4 @@ TEST(StoreConcurrencyTest, DuplicateComplete_AtMostOneSuccess) {
   EXPECT_EQ(stats["pending"].get<int>(), 0);
 }
 
-}  // namespace projectnestor::test
+}  // namespace nestor::test

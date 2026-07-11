@@ -1,4 +1,4 @@
-// ProjectNestor security posture warnings — C++20
+// Nestor security posture warnings — C++20
 //
 // Logs startup warnings when the server's security posture is suboptimal.
 // Separated from server_main.cpp so the logic can be unit-tested without
@@ -9,7 +9,7 @@
 #include <ostream>
 #include <string>
 
-namespace projectnestor {
+namespace nestor {
 
 /// Log security posture warnings to @p out based on bind address and TLS state.
 ///
@@ -22,4 +22,4 @@ namespace projectnestor {
 /// No output when bind_addr == "127.0.0.1" AND tls_enabled == true.
 void log_security_posture(std::ostream& out, const std::string& bind_addr, bool tls_enabled);
 
-}  // namespace projectnestor
+}  // namespace nestor

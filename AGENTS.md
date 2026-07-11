@@ -1,11 +1,11 @@
-# AGENTS.md — ProjectNestor
+# AGENTS.md — Nestor
 
-This document specifies the multi-agent coordination protocols for ProjectNestor
+This document specifies the multi-agent coordination protocols for Nestor
 within the HomericIntelligence distributed agent mesh.
 
 ## Role boundary
 
-ProjectNestor is the research and ideation upstream service. It transforms raw
+Nestor is the research and ideation upstream service. It transforms raw
 user ideas into researched briefs that ProjectAgamemnon plans and executes.
 
 ```

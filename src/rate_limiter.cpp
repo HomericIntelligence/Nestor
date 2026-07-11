@@ -1,6 +1,6 @@
-// ProjectNestor rate limiter — token-bucket per-IP, C++20.
+// Nestor rate limiter — token-bucket per-IP, C++20.
 
-#include "projectnestor/rate_limiter.hpp"
+#include "nestor/rate_limiter.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -10,7 +10,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace projectnestor {
+namespace nestor {
 
 namespace {
 
@@ -155,4 +155,4 @@ void RateLimiter::evict_oldest_locked() {
   }
 }
 
-}  // namespace projectnestor
+}  // namespace nestor

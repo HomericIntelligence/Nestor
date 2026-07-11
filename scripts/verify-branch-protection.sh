@@ -15,7 +15,7 @@
 # conversation-thread resolution required, required status checks enforced.
 set -euo pipefail
 
-REPO="HomericIntelligence/ProjectNestor"
+REPO="HomericIntelligence/Nestor"
 
 # Fetch the effective branch rules for main. This returns a flat array of the
 # rules that apply to the branch (from branch protection and/or rulesets).

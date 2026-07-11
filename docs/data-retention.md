@@ -1,11 +1,11 @@
 # Data Retention and Deletion Policy
 
 This document describes the data retention and deletion policy for
-ProjectNestor.
+Nestor.
 
 ## Scope
 
-ProjectNestor stores research items submitted via `POST /v1/research`. Each
+Nestor stores research items submitted via `POST /v1/research`. Each
 item contains an optional user-provided `idea` string, an optional `context`
 string, an opaque server-generated `id`, and a lifecycle `status`.
 
@@ -29,7 +29,7 @@ The eviction counter is exposed via `GET /v1/research/stats` as the `expired`
 field, enabling operators to observe how many pending items have been silently
 dropped due to TTL.
 
-There is currently **no on-disk persistence**; restarting the ProjectNestor
+There is currently **no on-disk persistence**; restarting the Nestor
 process clears all stored research items regardless of the above bounds.
 
 ## Deletion
@@ -44,12 +44,12 @@ self-service deletion paths exist:
 
 For immediate deletion of a pending item, users must request operator
 intervention. A user-facing deletion endpoint is tracked in the issue backlog
-and will be implemented before ProjectNestor stores user data on persistent
+and will be implemented before Nestor stores user data on persistent
 media.
 
 ## Data subject rights
 
-Until a deletion endpoint exists, ProjectNestor accepts user text on the
+Until a deletion endpoint exists, Nestor accepts user text on the
 explicit understanding (documented in `docs/privacy.md`) that operators may
 clear the in-memory store at any time. Users who require GDPR-style
 right-to-erasure guarantees must avoid submitting personal data to this
@@ -58,4 +58,4 @@ service.
 ## Review
 
 This policy is reviewed whenever a persistent storage backend is added to
-ProjectNestor or whenever a new GDPR-relevant feature lands.
+Nestor or whenever a new GDPR-relevant feature lands.

@@ -16,7 +16,7 @@
 // stop/start the broker mid-test. They run last and restore the broker even
 // on failure so earlier re-runs see a live broker.
 
-#include "projectnestor/nats_client.hpp"
+#include "nestor/nats_client.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -32,7 +32,7 @@
 #include "nlohmann/json.hpp"
 #include <gtest/gtest.h>
 
-namespace projectnestor::test {
+namespace nestor::test {
 namespace {
 
 using namespace std::chrono_literals;
@@ -415,4 +415,4 @@ TEST_F(NatsClientLiveTest, ReconnectLoopConnectsWhenBrokerReturns) {
 }
 
 }  // namespace
-}  // namespace projectnestor::test
+}  // namespace nestor::test

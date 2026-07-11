@@ -1,12 +1,12 @@
-// Unit tests for projectnestor::log_security_posture — C++20
+// Unit tests for nestor::log_security_posture — C++20
 
-#include "projectnestor/security_warnings.hpp"
+#include "nestor/security_warnings.hpp"
 
 #include <sstream>
 
 #include <gtest/gtest.h>
 
-namespace projectnestor::test {
+namespace nestor::test {
 
 TEST(SecurityWarningsTest, LoopbackAndTlsNoOutput) {
   std::ostringstream out;
@@ -43,4 +43,4 @@ TEST(SecurityWarningsTest, LoopbackAndTlsDisabledTlsOnlyWarning) {
   EXPECT_EQ(msg.find("all interfaces"), std::string::npos);
 }
 
-}  // namespace projectnestor::test
+}  // namespace nestor::test

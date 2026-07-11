@@ -30,7 +30,7 @@ target_include_directories(${PROJECT_NAME}_tests PRIVATE
 # source files (e.g. the auth-token-logging guard) can locate them
 # regardless of where the build or checkout lives.
 target_compile_definitions(${PROJECT_NAME}_tests
-  PRIVATE PROJECTNESTOR_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+  PRIVATE NESTOR_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 
 target_link_libraries(${PROJECT_NAME}_tests
   PRIVATE
@@ -97,7 +97,7 @@ endif()
 
 if(${PROJECT_NAME}_ENABLE_SANITIZERS)
   if("address" IN_LIST ${PROJECT_NAME}_SANITIZER)
-    add_test(NAME ProjectNestor.SanitizerProof.ASAN
+    add_test(NAME Nestor.SanitizerProof.ASAN
       COMMAND $<TARGET_FILE:${PROJECT_NAME}_tests>
               --gtest_filter=SanitizerProof.HeapUseAfterFree)
     # WILL_FAIL inverts a clean non-zero exit, but it treats a crash/signal
@@ -106,16 +106,16 @@ if(${PROJECT_NAME}_ENABLE_SANITIZERS)
     # use-after-free abort via SIGABRT. Override it to 0 for this proof test so
     # the sanitizer reports the error and exit()s with a non-zero code that
     # WILL_FAIL can invert.
-    set_tests_properties(ProjectNestor.SanitizerProof.ASAN PROPERTIES
+    set_tests_properties(Nestor.SanitizerProof.ASAN PROPERTIES
       WILL_FAIL ON LABELS "sanitizer"
       ENVIRONMENT "ASAN_OPTIONS=abort_on_error=0:halt_on_error=1")
   endif()
 
   if("thread" IN_LIST ${PROJECT_NAME}_SANITIZER)
-    add_test(NAME ProjectNestor.SanitizerProof.TSAN
+    add_test(NAME Nestor.SanitizerProof.TSAN
       COMMAND $<TARGET_FILE:${PROJECT_NAME}_tests>
               --gtest_filter=SanitizerProof.DataRace)
-    set_tests_properties(ProjectNestor.SanitizerProof.TSAN PROPERTIES
+    set_tests_properties(Nestor.SanitizerProof.TSAN PROPERTIES
       WILL_FAIL ON LABELS "sanitizer"
       ENVIRONMENT "TSAN_OPTIONS=abort_on_error=0:halt_on_error=1")
   endif()

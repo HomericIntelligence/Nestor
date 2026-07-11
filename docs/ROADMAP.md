@@ -1,6 +1,6 @@
-# ProjectNestor Roadmap
+# Nestor Roadmap
 
-This is the working roadmap for ProjectNestor. It complements the GitHub
+This is the working roadmap for Nestor. It complements the GitHub
 issue tracker (the authoritative work queue) by grouping work into
 milestones and noting prioritisation.
 

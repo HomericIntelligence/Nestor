@@ -134,7 +134,7 @@ jobs:
         with:
           build-type: Debug
       - name: Configure with clang-tidy
-        run: cmake --preset debug -DProjectNestor_ENABLE_CLANG_TIDY=ON
+        run: cmake --preset debug -DNestor_ENABLE_CLANG_TIDY=ON
       - name: clang-tidy check
         run: |
           set -euo pipefail
@@ -531,34 +531,34 @@ jobs:
           platforms: linux/amd64
           push: false
           load: true
-          tags: projectnestor:ci
+          tags: nestor:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Inspect image metadata
         run: |
           set -euo pipefail
-          # Dockerfile uses CMD ["ProjectNestor_server"] with no ENTRYPOINT.
+          # Dockerfile uses CMD ["Nestor_server"] with no ENTRYPOINT.
           # Assert Cmd is non-empty; Entrypoint is allowed to be null.
-          cmd=$(docker inspect --format '{{json .Config.Cmd}}' projectnestor:ci)
+          cmd=$(docker inspect --format '{{json .Config.Cmd}}' nestor:ci)
           if [ "$cmd" = "null" ] || [ "$cmd" = "[]" ]; then
             echo "Config.Cmd is empty: $cmd"
             exit 1
           fi
 
-          user=$(docker inspect --format '{{.Config.User}}' projectnestor:ci)
+          user=$(docker inspect --format '{{.Config.User}}' nestor:ci)
           if [ "$user" != "nestor" ]; then
             echo "Expected USER nestor, got: '$user'"
             exit 1
           fi
 
-          ports=$(docker inspect --format '{{json .Config.ExposedPorts}}' projectnestor:ci)
+          ports=$(docker inspect --format '{{json .Config.ExposedPorts}}' nestor:ci)
           if ! echo "$ports" | grep -q '"8081/tcp"'; then
             echo "8081/tcp not in ExposedPorts: $ports"
             exit 1
           fi
 
-          hc=$(docker inspect --format '{{json .Config.Healthcheck.Test}}' projectnestor:ci)
+          hc=$(docker inspect --format '{{json .Config.Healthcheck.Test}}' nestor:ci)
           if [ "$hc" = "null" ] || [ "$hc" = "[]" ]; then
             echo "Healthcheck.Test is empty: $hc"
             exit 1
@@ -589,7 +589,7 @@ jobs:
             -e NESTOR_AUTH_TOKEN=ci-smoke-only-token \
             -e NESTOR_BIND_ADDR=0.0.0.0 \
             -p 18081:8081 \
-            projectnestor:ci)
+            nestor:ci)
 
           # Poll /v1/health for up to 30s. The route (routes.cpp:25) returns
           # {"status":"ok"} unconditionally, so a 2xx here proves the binary

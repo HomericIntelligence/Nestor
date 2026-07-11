@@ -1,4 +1,4 @@
-#include "projectnestor/trace_context.hpp"
+#include "nestor/trace_context.hpp"
 
 #include <regex>
 #include <set>
@@ -6,7 +6,7 @@
 #include "httplib.h"
 #include <gtest/gtest.h>
 
-namespace projectnestor::test {
+namespace nestor::test {
 
 // ── Parsing Tests ──────────────────────────────────────────────────────────
 
@@ -204,4 +204,4 @@ TEST(TraceContextTest, ToTraceparentRoundTrip) {
   EXPECT_EQ(extracted_span_id, original.span_id);
 }
 
-}  // namespace projectnestor::test
+}  // namespace nestor::test
