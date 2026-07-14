@@ -610,11 +610,14 @@ jobs:
             exit 1
           fi
 
-          # Verify graceful-degradation log line (server_main.cpp:63).
-          # Confirms the NATS-unreachable code path executes cleanly.
+          # Verify graceful-degradation log line (server_main.cpp:145,
+          # nats_client.cpp:123). Confirms the NATS-unreachable code path
+          # executes cleanly. Pattern must match the exact literal emitted by
+          # NatsClient::connect() / main(): "NATS unreachable at startup —
+          # retrying in background." (the code never logs "NATS unavailable").
           logs=$(docker logs "$cid" 2>&1)
-          if ! echo "$logs" | grep -q 'NATS unavailable'; then
-            echo "expected 'NATS unavailable' log line not found; full logs:"
+          if ! echo "$logs" | grep -q 'NATS unreachable'; then
+            echo "expected 'NATS unreachable' log line not found; full logs:"
             echo "$logs"
             exit 1
           fi
