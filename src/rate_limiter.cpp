@@ -119,8 +119,7 @@ RateLimitDecision RateLimiter::check(const std::string& key, RouteClass rc) {
     fresh.tokens = capacity;  // New bucket starts full.
     fresh.last_refill = now;
     fresh.last_seen = now;
-    auto [inserted_it, _] = buckets_.emplace(bucket_key, fresh);
-    it = inserted_it;
+    it = buckets_.emplace(bucket_key, fresh).first;
   }
 
   Bucket& b = it->second;
