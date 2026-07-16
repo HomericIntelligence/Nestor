@@ -6,7 +6,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace projectnestor {
+namespace nestor {
 
 /// Route classification for per-route rate-limit overrides.
 /// No default case in switch statements — all variants are handled explicitly
@@ -93,4 +93,4 @@ class RateLimiter {
   std::unordered_map<std::string, Bucket> buckets_;
 };
 
-}  // namespace projectnestor
+}  // namespace nestor

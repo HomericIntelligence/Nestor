@@ -38,10 +38,10 @@ function(enable_sanitizers target)
 
   # Set compile definitions for test code to gate on specific sanitizers
   if("address" IN_LIST ${PROJECT_NAME}_SANITIZER)
-    target_compile_definitions(${target} PRIVATE PROJECTNESTOR_SANITIZER_ADDRESS=1)
+    target_compile_definitions(${target} PRIVATE NESTOR_SANITIZER_ADDRESS=1)
   endif()
   if("thread" IN_LIST ${PROJECT_NAME}_SANITIZER)
-    target_compile_definitions(${target} PRIVATE PROJECTNESTOR_SANITIZER_THREAD=1)
+    target_compile_definitions(${target} PRIVATE NESTOR_SANITIZER_THREAD=1)
   endif()
 
   message(STATUS "Sanitizers enabled for ${target}: ${${PROJECT_NAME}_SANITIZER}")

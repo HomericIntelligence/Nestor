@@ -5,7 +5,7 @@
 
 #include "httplib.h"
 
-namespace projectnestor {
+namespace nestor {
 
 enum class AuthMode { Required, None };
 
@@ -18,4 +18,4 @@ std::optional<AuthConfig> load_auth_config_from_env();
 
 void install_auth_middleware(httplib::Server& server, const AuthConfig& cfg);
 
-}  // namespace projectnestor
+}  // namespace nestor

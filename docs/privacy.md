@@ -1,6 +1,6 @@
 # Privacy and Data Handling
 
-ProjectNestor accepts free-form user text via `POST /v1/research`
+Nestor accepts free-form user text via `POST /v1/research`
 (`idea` and optional `context` fields). This document describes how
 that data is handled.
 
@@ -11,7 +11,7 @@ that data is handled.
 - Submission and completion timestamps (implicit, via NATS event timestamps).
 - A best-effort topic field used for structured logging.
 
-No client IP, user-agent, or identity material is logged by ProjectNestor
+No client IP, user-agent, or identity material is logged by Nestor
 itself. Upstream gateways may log such data separately.
 
 ## Where it goes
@@ -27,13 +27,13 @@ itself. Upstream gateways may log such data separately.
 
 ## GDPR considerations
 
-ProjectNestor is provided primarily for internal HomericIntelligence
+Nestor is provided primarily for internal HomericIntelligence
 research workflows. Users **should not** submit personal data (their own or
 anyone else's) via this API.
 
 ### Lawful basis
 
-When ProjectNestor is operated on personal data the lawful basis is
+When Nestor is operated on personal data the lawful basis is
 expected to be **legitimate interest** for internal research/operational
 use, unless the operator has obtained explicit consent.
 
@@ -41,11 +41,11 @@ use, unless the operator has obtained explicit consent.
 
 Until a persistent storage backend and a DELETE endpoint exist, the
 practical mechanism for honouring an erasure request is for an operator
-to restart the ProjectNestor process. See `docs/data-retention.md`.
+to restart the Nestor process. See `docs/data-retention.md`.
 
 ### International transfers
 
-ProjectNestor does not, on its own, transfer data internationally. NATS
+Nestor does not, on its own, transfer data internationally. NATS
 subscribers may; consult the operator of each subscriber.
 
 ## Contact

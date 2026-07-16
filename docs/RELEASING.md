@@ -1,6 +1,6 @@
-# Releasing ProjectNestor
+# Releasing Nestor
 
-This document describes the **manual** release process for ProjectNestor.
+This document describes the **manual** release process for Nestor.
 Automation is tracked separately (see `docs/ROADMAP.md`, milestone v0.3.0).
 
 ## Version sources of truth
@@ -9,7 +9,7 @@ The version `MAJOR.MINOR.PATCH` is currently duplicated in four places:
 
 1. `CMakeLists.txt` — `project(... VERSION X.Y.Z ...)`.
 2. `conanfile.py` — `version = "X.Y.Z"`.
-3. `include/projectnestor/version.hpp` — `constexpr` literals.
+3. `include/nestor/version.hpp` — `constexpr` literals.
 4. `pixi.toml` — `version = "X.Y.Z"` under `[project]`.
 
 A future automation will collapse these to one. Until then, **all four must
@@ -35,12 +35,12 @@ be bumped in the same commit**.
 
 ## Versioning policy
 
-ProjectNestor follows [Semantic Versioning 2.0.0](https://semver.org/). The
+Nestor follows [Semantic Versioning 2.0.0](https://semver.org/). The
 public surface area governed by SemVer is:
 
 - HTTP API paths, request shape, response shape.
 - NATS subjects emitted by the service (`hi.research.*`, `hi.logs.nestor.*`).
-- The C++ API exposed via `include/projectnestor/`.
+- The C++ API exposed via `include/nestor/`.
 
 Internal implementation details (file layout, private classes, CMake
 internals) are **not** part of the public surface.

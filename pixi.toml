@@ -1,5 +1,5 @@
 [project]
-name = "projectnestor"
+name = "nestor"
 version = "0.1.0"
 description = "Research, ideation, and search for HomericIntelligence"
 channels = ["conda-forge"]

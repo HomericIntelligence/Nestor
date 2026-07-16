@@ -1,8 +1,8 @@
-#include "projectnestor/auth.hpp"
-#include "projectnestor/nats_client.hpp"
-#include "projectnestor/rate_limiter.hpp"
-#include "projectnestor/routes.hpp"
-#include "projectnestor/store.hpp"
+#include "nestor/auth.hpp"
+#include "nestor/nats_client.hpp"
+#include "nestor/rate_limiter.hpp"
+#include "nestor/routes.hpp"
+#include "nestor/store.hpp"
 
 #include <cstdlib>
 #include <memory>
@@ -12,7 +12,7 @@
 #include "nlohmann/json.hpp"
 #include <gtest/gtest.h>
 
-namespace projectnestor::test {
+namespace nestor::test {
 
 using json = nlohmann::json;
 
@@ -780,4 +780,4 @@ TEST(MeshWireHelpers, HandleResearchStatusIgnoresNonTerminalAndForeignSubjects) 
   EXPECT_TRUE(handle_research_status(store, "hi.research." + id, R"({"status":"completed"})"));
 }
 
-}  // namespace projectnestor::test
+}  // namespace nestor::test

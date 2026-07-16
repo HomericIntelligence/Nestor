@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to ProjectNestor are documented in this file.
+All notable changes to Nestor are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -27,5 +27,5 @@ The release process is documented in `docs/RELEASING.md`.
   `GET /v1/research/stats`, `GET /v1/health`.
 - Conan-managed dependencies, CMake presets, gtest suite.
 
-[Unreleased]: https://github.com/HomericIntelligence/ProjectNestor/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/HomericIntelligence/ProjectNestor/releases/tag/v0.1.0
+[Unreleased]: https://github.com/HomericIntelligence/Nestor/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/HomericIntelligence/Nestor/releases/tag/v0.1.0

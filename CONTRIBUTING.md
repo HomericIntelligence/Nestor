@@ -1,6 +1,6 @@
-# Contributing to ProjectNestor
+# Contributing to Nestor
 
-Thank you for your interest in contributing to ProjectNestor! This is the research, ideation,
+Thank you for your interest in contributing to Nestor! This is the research, ideation,
 and search service for the [HomericIntelligence](https://github.com/HomericIntelligence)
 distributed agent mesh.
 
@@ -30,8 +30,8 @@ For an overview of the full ecosystem, see the
 
 ```bash
 # Clone the repository
-git clone https://github.com/HomericIntelligence/ProjectNestor.git
-cd ProjectNestor
+git clone https://github.com/HomericIntelligence/Nestor.git
+cd Nestor
 
 # Activate the Pixi environment (installs CMake, Ninja, clang-tools, gcovr)
 pixi shell
@@ -81,7 +81,7 @@ just ci
 
 Before starting work:
 
-- Browse [existing issues](https://github.com/HomericIntelligence/ProjectNestor/issues)
+- Browse [existing issues](https://github.com/HomericIntelligence/Nestor/issues)
 - Comment on an issue to claim it before starting work
 - Create a new issue if one doesn't exist for your contribution
 
@@ -251,4 +251,4 @@ Please review our [Code of Conduct](CODE_OF_CONDUCT.md) before contributing.
 
 ---
 
-Thank you for contributing to ProjectNestor!
+Thank you for contributing to Nestor!

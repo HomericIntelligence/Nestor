@@ -1,8 +1,8 @@
-// ProjectNestor route handlers — C++20 with real Store and NATS integration.
+// Nestor route handlers — C++20 with real Store and NATS integration.
 
-#include "projectnestor/routes.hpp"
+#include "nestor/routes.hpp"
 
-#include "projectnestor/trace_context.hpp"
+#include "nestor/trace_context.hpp"
 
 #include <optional>
 #include <string>
@@ -11,7 +11,7 @@
 #include "httplib.h"
 #include "nlohmann/json.hpp"
 
-namespace projectnestor {
+namespace nestor {
 
 using json = nlohmann::json;
 
@@ -349,4 +349,4 @@ void register_routes(httplib::Server& server, Store& store, NatsClient& nats,
   });
 }
 
-}  // namespace projectnestor
+}  // namespace nestor

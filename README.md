@@ -1,8 +1,8 @@
-# ProjectNestor
+# Nestor
 
-[![Build & Test](https://github.com/HomericIntelligence/ProjectNestor/actions/workflows/build-test.yml/badge.svg)](https://github.com/HomericIntelligence/ProjectNestor/actions/workflows/build-test.yml)
-[![Code Coverage](https://github.com/HomericIntelligence/ProjectNestor/actions/workflows/code-coverage.yml/badge.svg)](https://github.com/HomericIntelligence/ProjectNestor/actions/workflows/code-coverage.yml)
-[![Static Analysis](https://github.com/HomericIntelligence/ProjectNestor/actions/workflows/static-analysis.yml/badge.svg)](https://github.com/HomericIntelligence/ProjectNestor/actions/workflows/static-analysis.yml)
+[![Build & Test](https://github.com/HomericIntelligence/Nestor/actions/workflows/build-test.yml/badge.svg)](https://github.com/HomericIntelligence/Nestor/actions/workflows/build-test.yml)
+[![Code Coverage](https://github.com/HomericIntelligence/Nestor/actions/workflows/code-coverage.yml/badge.svg)](https://github.com/HomericIntelligence/Nestor/actions/workflows/code-coverage.yml)
+[![Static Analysis](https://github.com/HomericIntelligence/Nestor/actions/workflows/static-analysis.yml/badge.svg)](https://github.com/HomericIntelligence/Nestor/actions/workflows/static-analysis.yml)
 
 Research, ideation, and search for the HomericIntelligence distributed agent mesh.
 
@@ -58,7 +58,7 @@ manual build path.
 
 ```bash
 export NESTOR_AUTH_TOKEN="your-secret-token"
-./build/debug/bin/projectnestor      # or run via container, below
+./build/debug/bin/nestor      # or run via container, below
 ```
 
 By default the HTTP server listens on `0.0.0.0:8080` and publishes events to
@@ -110,10 +110,10 @@ API documentation under `build/docs/`.
 A minimal Dockerfile is provided:
 
 ```bash
-podman build -t projectnestor .
+podman build -t nestor .
 podman run --rm -p 8080:8080 \
   -e NATS_URL=nats://host.docker.internal:4222 \
-  projectnestor
+  nestor
 ```
 
 ## Documentation

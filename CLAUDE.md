@@ -1,8 +1,8 @@
-# CLAUDE.md — ProjectNestor
+# CLAUDE.md — Nestor
 
 ## Project Overview
 
-ProjectNestor is the research, ideation, and search service for the HomericIntelligence
+Nestor is the research, ideation, and search service for the HomericIntelligence
 distributed agent mesh.
 
 **Role in the pipeline:** User ↔ Odysseus ↔ **Nestor** ↔ Agamemnon ↔ agentic pipeline loop → completion

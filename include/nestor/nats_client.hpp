@@ -1,6 +1,6 @@
 #pragma once
 
-#include "projectnestor/reconnect_policy.hpp"
+#include "nestor/reconnect_policy.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -20,7 +20,7 @@ struct __natsConnection;
 struct __natsSubscription;
 struct __natsMsg;
 
-namespace projectnestor {
+namespace nestor {
 
 /// NATS JetStream client with transparent reconnection.
 ///
@@ -151,4 +151,4 @@ class NatsClient {
   void resubscribe_research_locked();
 };
 
-}  // namespace projectnestor
+}  // namespace nestor

@@ -3,7 +3,7 @@
 
 #include "httplib.h"
 
-namespace projectnestor {
+namespace nestor {
 
 struct TraceContext {
   std::string trace_id;
@@ -35,4 +35,4 @@ bool is_lower_hex(const std::string& s);
 
 }  // namespace detail
 
-}  // namespace projectnestor
+}  // namespace nestor

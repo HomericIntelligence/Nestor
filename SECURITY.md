@@ -39,7 +39,7 @@ An attacker could enumerate internal NATS subjects and agent IDs
 to map the service topology.
 
 Steps to Reproduce:
-1. Start ProjectNestor server
+1. Start Nestor server
 2. curl http://<host>:8081/v1/research
 3. Observe internal metadata in the response
 
@@ -141,7 +141,7 @@ Requests without a valid Bearer token return **401 Unauthorized**:
 # Start the server with authentication enabled
 export NESTOR_AUTH_TOKEN="your-secret-token"
 export NESTOR_AUTH_MODE="required"
-./projectnestor_server
+./nestor_server
 
 # Unauthenticated request → 401
 curl http://localhost:8081/v1/health
@@ -161,7 +161,7 @@ curl -H "Authorization: Bearer your-secret-token" http://localhost:8081/v1/healt
 
 ## Security Best Practices
 
-When contributing to ProjectNestor:
+When contributing to Nestor:
 
 - Validate all HTTP request input before processing
 - Avoid buffer overflows and undefined behavior

@@ -1,12 +1,12 @@
-// ProjectNestor TLS configuration implementation — C++20
+// Nestor TLS configuration implementation — C++20
 
-#include "projectnestor/tls_config.hpp"
+#include "nestor/tls_config.hpp"
 
 #include <cstdlib>
 #include <fstream>
 #include <string_view>
 
-namespace projectnestor {
+namespace nestor {
 
 std::optional<TlsConfig> TlsConfig::from_env(std::ostream& err) {
   TlsConfig cfg;
@@ -59,4 +59,4 @@ std::optional<TlsConfig> TlsConfig::from_env(std::ostream& err) {
   return cfg;
 }
 
-}  // namespace projectnestor
+}  // namespace nestor

@@ -1,6 +1,6 @@
 // Unit tests for RateLimiter — issue #44.
 
-#include "projectnestor/rate_limiter.hpp"
+#include "nestor/rate_limiter.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -11,7 +11,7 @@
 
 #include <gtest/gtest.h>
 
-namespace projectnestor::test {
+namespace nestor::test {
 
 using Clock = RateLimiter::Clock;
 using TimePoint = RateLimiter::TimePoint;
@@ -262,4 +262,4 @@ TEST(RateLimiterTest, RouteClassesUseSeparateBuckets) {
   EXPECT_TRUE(d.allowed) << "Default bucket must not be starved by a research flood";
 }
 
-}  // namespace projectnestor::test
+}  // namespace nestor::test

@@ -1,10 +1,10 @@
-#include "projectnestor/version.hpp"
+#include "nestor/version.hpp"
 
 #include <gtest/gtest.h>
 
-namespace projectnestor::test {
+namespace nestor::test {
 
-TEST(VersionTest, ProjectNameIsCorrect) { EXPECT_EQ(kProjectName, "ProjectNestor"); }
+TEST(VersionTest, ProjectNameIsCorrect) { EXPECT_EQ(kProjectName, "Nestor"); }
 
 TEST(VersionTest, VersionIsSet) { EXPECT_FALSE(kVersion.empty()); }
 
@@ -14,4 +14,4 @@ TEST(VersionTest, GetProjectNameReturnsName) {
   EXPECT_STREQ(get_project_name(), kProjectName.data());
 }
 
-}  // namespace projectnestor::test
+}  // namespace nestor::test
