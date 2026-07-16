@@ -23,9 +23,9 @@
       "inherits": "base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "ProjectNestor_BUILD_TESTING": "ON",
-        "ProjectNestor_ENABLE_SANITIZERS": "ON",
-        "ProjectNestor_SANITIZER": "address;undefined"
+        "Nestor_BUILD_TESTING": "ON",
+        "Nestor_ENABLE_SANITIZERS": "ON",
+        "Nestor_SANITIZER": "address;undefined"
       }
     },
     {
@@ -34,7 +34,7 @@
       "inherits": "base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "ProjectNestor_BUILD_TESTING": "ON"
+        "Nestor_BUILD_TESTING": "ON"
       }
     },
     {
@@ -43,8 +43,8 @@
       "inherits": "base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "ProjectNestor_BUILD_TESTING": "ON",
-        "ProjectNestor_ENABLE_COVERAGE": "ON"
+        "Nestor_BUILD_TESTING": "ON",
+        "Nestor_ENABLE_COVERAGE": "ON"
       }
     },
     {
@@ -52,7 +52,7 @@
       "displayName": "CI",
       "inherits": "release",
       "cacheVariables": {
-        "ProjectNestor_WARNINGS_AS_ERRORS": "ON"
+        "Nestor_WARNINGS_AS_ERRORS": "ON"
       }
     },
     {
@@ -61,8 +61,8 @@
       "inherits": "base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "ProjectNestor_BUILD_TESTING": "OFF",
-        "ProjectNestor_ENABLE_DOXYGEN": "ON"
+        "Nestor_BUILD_TESTING": "OFF",
+        "Nestor_ENABLE_DOXYGEN": "ON"
       }
     },
     {
@@ -70,8 +70,8 @@
       "displayName": "AddressSanitizer + UBSan",
       "inherits": "debug",
       "cacheVariables": {
-        "ProjectNestor_ENABLE_SANITIZERS": "ON",
-        "ProjectNestor_SANITIZER": "address;undefined"
+        "Nestor_ENABLE_SANITIZERS": "ON",
+        "Nestor_SANITIZER": "address;undefined"
       }
     },
     {
@@ -79,8 +79,8 @@
       "displayName": "ThreadSanitizer",
       "inherits": "debug",
       "cacheVariables": {
-        "ProjectNestor_ENABLE_SANITIZERS": "ON",
-        "ProjectNestor_SANITIZER": "thread"
+        "Nestor_ENABLE_SANITIZERS": "ON",
+        "Nestor_SANITIZER": "thread"
       }
     }
   ],

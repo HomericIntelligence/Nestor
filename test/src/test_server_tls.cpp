@@ -4,10 +4,10 @@
 // no cwd assumption) and exercises the real httplib::SSLServer path
 // by starting a server on an ephemeral port and hitting /v1/health.
 
-#include "projectnestor/nats_client.hpp"
-#include "projectnestor/rate_limiter.hpp"
-#include "projectnestor/routes.hpp"
-#include "projectnestor/store.hpp"
+#include "nestor/nats_client.hpp"
+#include "nestor/rate_limiter.hpp"
+#include "nestor/routes.hpp"
+#include "nestor/store.hpp"
 
 #include <atomic>
 #include <filesystem>
@@ -24,7 +24,7 @@
 #include "nlohmann/json.hpp"
 #include <gtest/gtest.h>
 
-namespace projectnestor::test {
+namespace nestor::test {
 
 using json = nlohmann::json;
 
@@ -174,4 +174,4 @@ TEST_F(ServerTlsTest, PlaintextClientRejectedByTlsServer) {
       << "Plain HTTP client should not succeed against SSLServer";
 }
 
-}  // namespace projectnestor::test
+}  // namespace nestor::test

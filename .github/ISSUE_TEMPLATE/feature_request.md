@@ -1,6 +1,6 @@
 ---
 name: Feature request
-about: Propose a new capability for ProjectNestor
+about: Propose a new capability for Nestor
 title: "[FEATURE] "
 labels: enhancement
 assignees: ''

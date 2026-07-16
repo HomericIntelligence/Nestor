@@ -1,15 +1,15 @@
 #pragma once
 
-#include "projectnestor/nats_client.hpp"
-#include "projectnestor/rate_limiter.hpp"
-#include "projectnestor/store.hpp"
+#include "nestor/nats_client.hpp"
+#include "nestor/rate_limiter.hpp"
+#include "nestor/store.hpp"
 
 #include <string>
 
 #include "httplib.h"
 #include "nlohmann/json.hpp"
 
-namespace projectnestor {
+namespace nestor {
 
 /// Register all HTTP route handlers onto the server.
 ///
@@ -35,4 +35,4 @@ nlohmann::json research_dispatch_payload(const nlohmann::json& body, const std::
 /// Returns true when a store item was completed.
 bool handle_research_status(Store& store, const std::string& subject, const std::string& payload);
 
-}  // namespace projectnestor
+}  // namespace nestor

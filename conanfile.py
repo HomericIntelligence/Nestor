@@ -2,8 +2,8 @@ from conan import ConanFile
 from conan.tools.cmake import CMakeToolchain, CMakeDeps
 
 
-class ProjectNestorConan(ConanFile):
-    name = "projectnestor"
+class NestorConan(ConanFile):
+    name = "nestor"
     version = "0.1.0"
     settings = "os", "compiler", "build_type", "arch"
     # Enable OpenSSL support in cpp-httplib so SSLServer is available.

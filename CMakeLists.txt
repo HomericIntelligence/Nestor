@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(
-  ProjectNestor
+  Nestor
   VERSION 0.1.0
   DESCRIPTION "Research, ideation, and search for HomericIntelligence"
   LANGUAGES CXX)
@@ -108,13 +108,13 @@ if(${PROJECT_NAME}_BUILD_TESTING)
 endif()
 
 # ─── Server Executable ─────────────────────────────────────────────────────
-add_executable(ProjectNestor_server src/server_main.cpp)
+add_executable(Nestor_server src/server_main.cpp)
 
-enable_sanitizers(ProjectNestor_server)
+enable_sanitizers(Nestor_server)
 
-target_link_libraries(ProjectNestor_server PRIVATE ${PROJECT_NAME}::core)
+target_link_libraries(Nestor_server PRIVATE ${PROJECT_NAME}::core)
 
-target_compile_features(ProjectNestor_server PRIVATE cxx_std_20)
+target_compile_features(Nestor_server PRIVATE cxx_std_20)
 
 if(${PROJECT_NAME}_BUILD_TESTING)
   enable_testing()
@@ -140,5 +140,5 @@ install(
   NAMESPACE ${PROJECT_NAME}::
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME})
 
-install(TARGETS ProjectNestor_server
+install(TARGETS Nestor_server
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

@@ -1,4 +1,4 @@
-#include "projectnestor/store.hpp"
+#include "nestor/store.hpp"
 
 #include <regex>
 #include <set>
@@ -8,7 +8,7 @@
 
 #include <gtest/gtest.h>
 
-namespace projectnestor::test {
+namespace nestor::test {
 
 TEST(GenerateUuidTest, ReturnsValidV4Format) {
   const std::string uuid = detail::generate_uuid();
@@ -388,4 +388,4 @@ TEST(StoreTest, SubmitWithoutTraceIdStoresEmpty) {
   EXPECT_EQ(completed["trace_id"], "");
 }
 
-}  // namespace projectnestor::test
+}  // namespace nestor::test

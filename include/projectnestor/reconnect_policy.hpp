@@ -4,7 +4,7 @@
 #include <chrono>
 #include <random>
 
-namespace projectnestor {
+namespace nestor {
 
 /// Exponential-backoff-with-jitter parameters for NATS reconnect and
 /// JetStream provisioner retry loops.
@@ -42,4 +42,4 @@ inline std::chrono::milliseconds next_delay(const ReconnectPolicy& policy, unsig
   return std::chrono::milliseconds(static_cast<long long>(final_ms));
 }
 
-}  // namespace projectnestor
+}  // namespace nestor

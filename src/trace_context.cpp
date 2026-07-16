@@ -1,12 +1,12 @@
-// ProjectNestor trace context — W3C traceparent parsing and correlation ID generation.
+// Nestor trace context — W3C traceparent parsing and correlation ID generation.
 
-#include "projectnestor/trace_context.hpp"
+#include "nestor/trace_context.hpp"
 
 #include <iomanip>
 #include <random>
 #include <sstream>
 
-namespace projectnestor {
+namespace nestor {
 
 namespace detail {
 
@@ -138,4 +138,4 @@ std::string to_traceparent_header(const TraceContext& ctx) {
   return oss.str();
 }
 
-}  // namespace projectnestor
+}  // namespace nestor

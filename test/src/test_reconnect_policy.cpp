@@ -1,8 +1,8 @@
-#include "projectnestor/reconnect_policy.hpp"
+#include "nestor/reconnect_policy.hpp"
 
 #include <gtest/gtest.h>
 
-namespace projectnestor::test {
+namespace nestor::test {
 
 // Use a seeded RNG for deterministic results.
 static std::mt19937 seeded_rng(42);
@@ -58,4 +58,4 @@ TEST(ReconnectPolicyTest, DefaultPolicyValuesAreReasonable) {
   EXPECT_DOUBLE_EQ(policy.jitter_hi, 1.5);
 }
 
-}  // namespace projectnestor::test
+}  // namespace nestor::test

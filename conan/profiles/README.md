@@ -1,6 +1,6 @@
 # Conan Profiles
 
-ProjectNestor ships two project-level Conan profiles that compose with your
+Nestor ships two project-level Conan profiles that compose with your
 auto-detected host profile:
 
 - `nestor-debug` — Debug build, C++20

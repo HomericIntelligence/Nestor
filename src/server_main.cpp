@@ -1,13 +1,13 @@
-// ProjectNestor HTTP Server — C++20
+// Nestor HTTP Server — C++20
 
-#include "projectnestor/auth.hpp"
-#include "projectnestor/nats_client.hpp"
-#include "projectnestor/rate_limiter.hpp"
-#include "projectnestor/routes.hpp"
-#include "projectnestor/security_warnings.hpp"
-#include "projectnestor/store.hpp"
-#include "projectnestor/tls_config.hpp"
-#include "projectnestor/version.hpp"
+#include "nestor/auth.hpp"
+#include "nestor/nats_client.hpp"
+#include "nestor/rate_limiter.hpp"
+#include "nestor/routes.hpp"
+#include "nestor/security_warnings.hpp"
+#include "nestor/store.hpp"
+#include "nestor/tls_config.hpp"
+#include "nestor/version.hpp"
 
 #include <chrono>
 #include <csignal>
@@ -31,7 +31,7 @@ void signal_handler(int /*signal*/) {
   // Async-signal-safe: write(2) is on the POSIX list; std::cout is NOT.
   // POSIX.1-2024 §2.4.3 — calling non-async-signal-safe functions from a
   // signal handler is undefined behaviour.
-  static constexpr char kMsg[] = "\nShutting down ProjectNestor...\n";
+  static constexpr char kMsg[] = "\nShutting down Nestor...\n";
   // Best-effort write; ignore EINTR/short-write — we're tearing down anyway.
   (void)::write(STDERR_FILENO, kMsg, sizeof(kMsg) - 1);
   if (g_server != nullptr) {
@@ -64,13 +64,13 @@ int main() {
   }();
 
   // ── TLS configuration ─────────────────────────────────────────────────────
-  const auto tls = projectnestor::TlsConfig::from_env(std::cerr);
+  const auto tls = nestor::TlsConfig::from_env(std::cerr);
   if (!tls.has_value()) {
     return 1;
   }
 
   // ── Security posture warning ──────────────────────────────────────────────
-  projectnestor::log_security_posture(std::cerr, host, tls->enabled);
+  nestor::log_security_posture(std::cerr, host, tls->enabled);
 
   // ── NATS URL ─────────────────────────────────────────────────────────────
   const std::string nats_url = []() -> std::string {
@@ -78,14 +78,14 @@ int main() {
     return env != nullptr ? env : "nats://localhost:4222";
   }();
 
-  auto auth_cfg = projectnestor::load_auth_config_from_env();
+  auto auth_cfg = nestor::load_auth_config_from_env();
   if (!auth_cfg) {
     std::cerr << "NESTOR_AUTH_TOKEN is not set (required in auth mode 'required')\n";
     return 1;
   }
 
   const std::size_t max_items = []() -> std::size_t {
-    constexpr std::size_t kDefault = projectnestor::Store::kDefaultMaxItems;
+    constexpr std::size_t kDefault = nestor::Store::kDefaultMaxItems;
     const char* env = std::getenv("NESTOR_MAX_ITEMS");
     if (env == nullptr) {
       return kDefault;
@@ -101,7 +101,7 @@ int main() {
   }();
 
   const long pending_ttl_seconds = []() -> long {
-    constexpr long kDefault = projectnestor::Store::kDefaultPendingTtlSeconds;
+    constexpr long kDefault = nestor::Store::kDefaultPendingTtlSeconds;
     const char* env = std::getenv("NESTOR_PENDING_TTL_SECONDS");
     if (env == nullptr) {
       return kDefault;
@@ -115,7 +115,7 @@ int main() {
     }
   }();
 
-  std::cout << projectnestor::kProjectName << " v" << projectnestor::kVersion << "\n";
+  std::cout << nestor::kProjectName << " v" << nestor::kVersion << "\n";
 
   const std::string scheme = tls->enabled ? "https" : "http";
   std::cout << "Starting " << scheme << " server on " << host << ":" << port << "\n";
@@ -124,18 +124,18 @@ int main() {
   // Read config from environment before connecting NATS so we can log early.
   // NESTOR_RATELIMIT_DISABLE=1 is a fail-loud escape hatch: it emits an ERROR
   // log and a NATS audit event so any production misconfiguration is visible.
-  // See: include/projectnestor/rate_limiter.hpp for the full invariant doc.
-  const projectnestor::RateLimitConfig rl_cfg = projectnestor::RateLimitConfig::from_env();
+  // See: include/nestor/rate_limiter.hpp for the full invariant doc.
+  const nestor::RateLimitConfig rl_cfg = nestor::RateLimitConfig::from_env();
 
-  projectnestor::Store store(max_items, std::chrono::seconds{pending_ttl_seconds});
-  projectnestor::NatsClient nats(nats_url);
+  nestor::Store store(max_items, std::chrono::seconds{pending_ttl_seconds});
+  nestor::NatsClient nats(nats_url);
 
   // Close store items when a research myrmidon publishes a terminal status on
   // hi.research.{id} (Odysseus ADR-013 §7). Must be registered before
   // connect(); runs on a nats.c delivery thread (Store is mutex-guarded).
   nats.set_research_status_handler(
       [&store](const std::string& subject, const std::string& payload) {
-        projectnestor::handle_research_status(store, subject, payload);
+        nestor::handle_research_status(store, subject, payload);
       });
 
   // Graceful degradation: server runs even if NATS is unavailable at startup.
@@ -166,7 +166,7 @@ int main() {
 
   // Construct limiter on main() stack — outlives server.listen() which blocks
   // until shutdown. Pointer captured by route lambdas (never dangling).
-  projectnestor::RateLimiter limiter{rl_cfg};
+  nestor::RateLimiter limiter{rl_cfg};
 
   // ── Server instantiation (TLS branch) ────────────────────────────────────
   if (tls->enabled) {
@@ -185,8 +185,8 @@ int main() {
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
 
-    projectnestor::install_auth_middleware(server, *auth_cfg);
-    projectnestor::register_routes(server, store, nats, limiter);
+    nestor::install_auth_middleware(server, *auth_cfg);
+    nestor::register_routes(server, store, nats, limiter);
 
     std::cout << "Routes registered. Listening...\n";
     if (!server.listen(host, port)) {
@@ -204,8 +204,8 @@ int main() {
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
 
-    projectnestor::install_auth_middleware(server, *auth_cfg);
-    projectnestor::register_routes(server, store, nats, limiter);
+    nestor::install_auth_middleware(server, *auth_cfg);
+    nestor::register_routes(server, store, nats, limiter);
 
     std::cout << "Routes registered. Listening...\n";
     if (!server.listen(host, port)) {

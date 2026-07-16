@@ -1,6 +1,6 @@
 # Audit Logging
 
-This document describes ProjectNestor's audit-logging conventions for
+This document describes Nestor's audit-logging conventions for
 security-relevant events.
 
 ## Goals
@@ -41,9 +41,9 @@ User-submitted free-form text (`idea`, `context`) **must not** be embedded.
 ## Retention
 
 Audit log retention is governed by the NATS event-bridge subscriber
-(ProjectArgus). ProjectNestor itself does not persist audit logs locally.
+(ProjectArgus). Nestor itself does not persist audit logs locally.
 
 ## Review
 
 This policy is reviewed whenever a new security-sensitive endpoint is
-added to ProjectNestor.
+added to Nestor.

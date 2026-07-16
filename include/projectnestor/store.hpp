@@ -8,7 +8,7 @@
 
 #include "nlohmann/json.hpp"
 
-namespace projectnestor {
+namespace nestor {
 using json = nlohmann::json;
 
 namespace detail {
@@ -80,4 +80,4 @@ class Store {
   const std::chrono::seconds pending_ttl_;
   std::atomic<int> expired_{0};
 };
-}  // namespace projectnestor
+}  // namespace nestor

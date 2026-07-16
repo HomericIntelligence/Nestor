@@ -1,6 +1,6 @@
-// Unit tests for projectnestor::TlsConfig — C++20
+// Unit tests for nestor::TlsConfig — C++20
 
-#include "projectnestor/tls_config.hpp"
+#include "nestor/tls_config.hpp"
 
 #include <cstdlib>
 #include <filesystem>
@@ -9,7 +9,7 @@
 
 #include <gtest/gtest.h>
 
-namespace projectnestor::test {
+namespace nestor::test {
 
 // ── Environment helpers ───────────────────────────────────────────────────────
 
@@ -177,4 +177,4 @@ TEST_F(TlsConfigTest, EnabledUnreadableKeyReturnsNullopt) {
   EXPECT_NE(err.str().find("Cannot open key"), std::string::npos);
 }
 
-}  // namespace projectnestor::test
+}  // namespace nestor::test

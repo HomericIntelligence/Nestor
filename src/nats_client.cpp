@@ -1,10 +1,10 @@
-// ProjectNestor NATS client — wraps nats.c for JetStream publishing.
+// Nestor NATS client — wraps nats.c for JetStream publishing.
 // Implements two-layer reconnection: library-level callbacks (runtime drops)
 // + external retry loop (initial connect failure / ClosedCB defensive path).
 // A separate provisioner thread owns all JetStream context creation so that
 // nats.c callback threads never perform re-entrant JetStream RPCs.
 
-#include "projectnestor/nats_client.hpp"
+#include "nestor/nats_client.hpp"
 
 #include <chrono>
 #include <iostream>
@@ -13,7 +13,7 @@
 #include "nats.h"
 #include "nlohmann/json.hpp"
 
-namespace projectnestor {
+namespace nestor {
 
 // ─── Construction / Destruction ───────────────────────────────────────────────
 
@@ -514,4 +514,4 @@ void NatsClient::publish_log(const std::string& subject, const std::string& leve
   // LCOV_EXCL_STOP
 }
 
-}  // namespace projectnestor
+}  // namespace nestor

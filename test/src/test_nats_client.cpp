@@ -1,11 +1,11 @@
-#include "projectnestor/nats_client.hpp"
+#include "nestor/nats_client.hpp"
 
 #include <chrono>
 #include <memory>
 
 #include <gtest/gtest.h>
 
-namespace projectnestor::test {
+namespace nestor::test {
 
 // ─── Existing tests (all preserved) ──────────────────────────────────────────
 
@@ -130,4 +130,4 @@ TEST(NatsClientTest, RepeatedConnectCloseCycles) {
   }
 }
 
-}  // namespace projectnestor::test
+}  // namespace nestor::test

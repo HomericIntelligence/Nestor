@@ -4,12 +4,12 @@
 
 #include <gtest/gtest.h>
 
-namespace ProjectNestor {
+namespace Nestor {
 
 class SanitizerProof : public ::testing::Test {};
 
 TEST_F(SanitizerProof, HeapUseAfterFree) {
-#ifndef PROJECTNESTOR_SANITIZER_ADDRESS
+#ifndef NESTOR_SANITIZER_ADDRESS
   GTEST_SKIP() << "AddressSanitizer not enabled";
 #else
   // Allocate memory, free it, and then use it — ASAN detects this
@@ -21,7 +21,7 @@ TEST_F(SanitizerProof, HeapUseAfterFree) {
 }
 
 TEST_F(SanitizerProof, DataRace) {
-#ifndef PROJECTNESTOR_SANITIZER_THREAD
+#ifndef NESTOR_SANITIZER_THREAD
   GTEST_SKIP() << "ThreadSanitizer not enabled";
 #else
   // Shared non-atomic variable accessed from two threads without synchronization
@@ -44,4 +44,4 @@ TEST_F(SanitizerProof, DataRace) {
 #endif
 }
 
-}  // namespace ProjectNestor
+}  // namespace Nestor

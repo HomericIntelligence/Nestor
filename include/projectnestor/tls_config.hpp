@@ -1,4 +1,4 @@
-// ProjectNestor TLS configuration — C++20
+// Nestor TLS configuration — C++20
 //
 // Reads TLS settings from environment variables. Returns std::nullopt on
 // configuration error (caller should exit 1).
@@ -9,7 +9,7 @@
 #include <ostream>
 #include <string>
 
-namespace projectnestor {
+namespace nestor {
 
 /// TLS configuration for the HTTP server.
 struct TlsConfig {
@@ -34,4 +34,4 @@ struct TlsConfig {
   [[nodiscard]] static std::optional<TlsConfig> from_env(std::ostream& err);
 };
 
-}  // namespace projectnestor
+}  // namespace nestor

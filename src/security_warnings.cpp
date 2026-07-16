@@ -1,8 +1,8 @@
-// ProjectNestor security posture warnings — C++20
+// Nestor security posture warnings — C++20
 
-#include "projectnestor/security_warnings.hpp"
+#include "nestor/security_warnings.hpp"
 
-namespace projectnestor {
+namespace nestor {
 
 void log_security_posture(std::ostream& out, const std::string& bind_addr, bool tls_enabled) {
   const bool wide_bind = (bind_addr != "127.0.0.1");
@@ -23,4 +23,4 @@ void log_security_posture(std::ostream& out, const std::string& bind_addr, bool 
   }
 }
 
-}  // namespace projectnestor
+}  // namespace nestor
