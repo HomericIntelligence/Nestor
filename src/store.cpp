@@ -18,8 +18,15 @@ Store::Store(std::size_t max_items, std::chrono::seconds pending_ttl)
 namespace detail {
 
 std::string generate_uuid() {
-  std::random_device rd;
-  std::mt19937_64 gen(rd());
+  // Seeded once per thread with 256 bits of entropy. A fresh generator seeded
+  // per call from a single 32-bit random_device draw collides (identical seed
+  // → identical UUID) with probability ~n²/2³³ over n calls — enough to hit
+  // duplicate IDs in the 8000-submission concurrency tests on CI.
+  thread_local std::mt19937_64 gen = [] {
+    std::random_device rd;
+    std::seed_seq seq{rd(), rd(), rd(), rd(), rd(), rd(), rd(), rd()};
+    return std::mt19937_64{seq};
+  }();
   std::uniform_int_distribution<uint64_t> dis;
 
   const uint64_t hi = dis(gen);

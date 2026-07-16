@@ -14,8 +14,10 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
       - name: Install dependencies
         run: |
-          sudo apt-get install -y ninja-build gcovr
-          pip install conan
+          sudo apt-get install -y ninja-build
+          # gcovr pinned via pip: the LCOV_EXCL_* marker placement in
+          # src/nats_client.cpp was verified against this exact version.
+          pip install conan 'gcovr==8.6'
           conan profile detect --force
       - name: Install Conan dependencies
         run: |
@@ -40,8 +42,8 @@ jobs:
             --filter include \
             --filter src \
             --exclude src/server_main.cpp \
-            --exclude src/nats_client.cpp \
             --gcov-ignore-parse-errors=negative_hits.warn \
+            --print-summary \
             --fail-under-line 80 \
             build/coverage
 

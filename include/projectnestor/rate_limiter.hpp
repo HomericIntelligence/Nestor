@@ -36,7 +36,9 @@ struct RateLimitDecision {
   int retry_after_sec = 0;  ///< Populated (>= 1) only when allowed == false.
 };
 
-/// Thread-safe per-IP token-bucket rate limiter.
+/// Thread-safe token-bucket rate limiter, keyed per (client IP, route class).
+/// Each route class gets its own bucket for a given client, so exhausting the
+/// Research bucket never starves Default-class endpoints such as /v1/health.
 ///
 /// ## Lifetime invariant
 /// Construct on the main() stack before register_routes() and before
@@ -46,7 +48,8 @@ struct RateLimitDecision {
 /// shutdown). See cpp-httplib-lambda-capture-ub team skill.
 ///
 /// ## Eviction policy
-/// The bucket map is capped at kMaxTrackedIps entries. When the cap is reached
+/// The bucket map is capped at kMaxTrackedIps entries (each client IP holds up
+/// to one bucket per route class). When the cap is reached
 /// and a new key would be inserted, a linear O(N) scan evicts the entry with
 /// the oldest last_seen timestamp. This is approximate LRU. O(N) per eviction
 /// is acceptable because evictions are rare relative to normal traffic; if
@@ -71,7 +74,8 @@ class RateLimiter {
   ///
   /// @param key  Typically req.remote_addr. Empty string is routed to the
   ///             "__unknown__" shared bucket (fail-closed — never bypassed).
-  /// @param rc   Route class; selects the appropriate token-bucket parameters.
+  /// @param rc   Route class; selects both the bucket (per key+class) and its
+  ///             token-bucket parameters.
   [[nodiscard]] RateLimitDecision check(const std::string& key, RouteClass rc);
 
  private:

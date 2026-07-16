@@ -238,4 +238,28 @@ TEST(RateLimiterTest, ResearchRouteClassUsesResearchConfig) {
   EXPECT_FALSE(rl.check("client", RouteClass::Research).allowed);
 }
 
+// ─── RouteClassesUseSeparateBuckets ──────────────────────────────────────────
+
+TEST(RateLimiterTest, RouteClassesUseSeparateBuckets) {
+  FakeClock clk;
+  RateLimitConfig cfg;
+  cfg.default_rps = 100.0;
+  cfg.default_burst = 100.0;
+  cfg.research_rps = 1.0;
+  cfg.research_burst = 2.0;
+  cfg.disabled = false;
+
+  RateLimiter rl{cfg, [&clk]() { return clk.now; }};
+
+  // Exhaust the research bucket without advancing the clock, so no refill
+  // can mask bucket sharing.
+  EXPECT_TRUE(rl.check("client", RouteClass::Research).allowed);
+  EXPECT_TRUE(rl.check("client", RouteClass::Research).allowed);
+  EXPECT_FALSE(rl.check("client", RouteClass::Research).allowed);
+
+  // The same client's Default-class bucket must be untouched by the flood.
+  const auto d = rl.check("client", RouteClass::Default);
+  EXPECT_TRUE(d.allowed) << "Default bucket must not be starved by a research flood";
+}
+
 }  // namespace projectnestor::test
