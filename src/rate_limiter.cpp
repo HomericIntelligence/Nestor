@@ -84,23 +84,32 @@ RateLimitDecision RateLimiter::check(const std::string& key, RouteClass rc) {
   // Select parameters based on route class; all cases explicit (no default:).
   double capacity = 0.0;
   double refill_rps = 0.0;
+  const char* rc_tag = "";
   switch (rc) {
     case RouteClass::Default:
       capacity = cfg_.default_burst;
       refill_rps = cfg_.default_rps;
+      rc_tag = "|default";
       break;
     case RouteClass::Research:
       capacity = cfg_.research_burst;
       refill_rps = cfg_.research_rps;
+      rc_tag = "|research";
       break;
   }
+
+  // Buckets are segregated per (client, route class). A single shared bucket
+  // per client would let an exhausted Research bucket starve Default traffic
+  // (e.g. /v1/health) from the same client, and the bucket's capacity would
+  // be whichever class touched it first.
+  const std::string bucket_key = effective_key + rc_tag;
 
   const TimePoint now = now_fn_();
 
   std::lock_guard<std::mutex> lock{mutex_};
 
   // Insert new bucket or retrieve existing one.
-  auto it = buckets_.find(effective_key);
+  auto it = buckets_.find(bucket_key);
   if (it == buckets_.end()) {
     // Evict if at capacity before inserting to bound map size.
     if (buckets_.size() >= kMaxTrackedIps) {
@@ -110,7 +119,7 @@ RateLimitDecision RateLimiter::check(const std::string& key, RouteClass rc) {
     fresh.tokens = capacity;  // New bucket starts full.
     fresh.last_refill = now;
     fresh.last_seen = now;
-    auto [inserted_it, _] = buckets_.emplace(effective_key, fresh);
+    auto [inserted_it, _] = buckets_.emplace(bucket_key, fresh);
     it = inserted_it;
   }
 
