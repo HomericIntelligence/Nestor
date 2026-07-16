@@ -110,6 +110,15 @@ TEST(NatsClientTest, DestructorWhileReconnectingIsSafe) {
   SUCCEED();
 }
 
+// set_research_status_handler is safe to call on a disconnected client; the
+// handler is simply stored and never invoked without a live subscription.
+TEST(NatsClientTest, SetResearchStatusHandlerWhenDisconnected) {
+  NatsClient client("nats://127.0.0.1:1");
+  client.set_research_status_handler(
+      [](const std::string& /*subject*/, const std::string& /*payload*/) {});
+  EXPECT_FALSE(client.is_connected());
+}
+
 // Multiple connect→close cycles against an unreachable URL.
 TEST(NatsClientTest, RepeatedConnectCloseCycles) {
   for (int i = 0; i < 5; ++i) {
