@@ -2,24 +2,34 @@
 
 ## Policy
 
-All PRs to `main` require:
+The live protection payload for `main` is a checks-only merge gate. All PRs to
+`main` require:
 
-- **≥1 approving review** from a developer other than the author
+- **No approving review** — `required_approving_review_count` is intentionally
+  `0`
 - **All required status checks** must pass, including:
   - All Build/Test Checks
   - All Static Analysis Checks
   - All Coverage Checks
   - branch-protection-drift (verifies this configuration stays in sync)
-- **Stale reviews are dismissed** — if a PR is updated after approval, a new review is required
+- **Review conversations must be resolved**
+- **Stale reviews are not dismissed** — `dismiss_stale_reviews` is `false`
+
+Independent human review of workflow changes is an external governance gate. It
+must be completed before an operator activates the staged merge queue, but it is
+not represented as an approving-review requirement in live branch protection.
 
 ## Rationale
 
-- **Peer review**: Prevents self-merged code from entering the production service
+- **Checks and conversation resolution**: Keep automated validation and review
+  discussion closure as the live merge gates without inventing an approval rule
+- **External workflow review**: Ensures a human independently reviews workflow
+  changes before merge-queue activation; this is outside the live protection
+  payload
 - **Drift detection**: The `branch-protection-drift` check runs on every PR and compares the
   exact effective context set and each ruleset's context ownership with
   `configs/github/merge-queue-policy.json`. If anyone modifies required checks via the GitHub UI,
   the next PR fails until the live split and policy agree
-- **Dismiss stale reviews**: Ensures reviewers re-check changes after significant PR updates
 
 ## Configuration
 
@@ -30,22 +40,32 @@ for the legacy branch-protection endpoint, and the regression suite requires tha
 match the policy's `homeric-main-extras` split. It is not a second context authority.
 
 `.github/branch-protection/main.json` remains the application payload for legacy review and
-branch settings that are outside the required-context policy.
+branch settings that are outside the required-context policy. Its review
+settings intentionally require zero approvals and do not dismiss stale reviews.
+The merge-queue readiness PR does not change this payload or live protection;
+queue activation is a separate, post-merge operator step described in
+[`merge-queue.md`](merge-queue.md).
 
 Emergency hotfixes follow a different procedure (see below). In all normal cases, the protection
 rules are not modified via the GitHub UI; they are defined in the JSON and applied via script.
 
 ## Applying Changes to Branch Protection
 
-To modify required contexts, edit the merge-queue policy first, update the named workflow job,
-and follow the reviewed ruleset procedure in the
-[merge-queue runbook](merge-queue.md). To modify only the legacy review or branch settings:
+For the staged merge-queue rollout, edit the merge-queue policy only when the
+required contexts or approved queue rule need to change, update the named
+workflow job, and follow the reviewed procedure in the
+[merge-queue runbook](merge-queue.md). The readiness PR does not require a
+live-protection mutation. Independent human workflow review remains an external
+gate before any post-merge activation.
+
+To intentionally modify only the legacy review or branch settings:
 
 1. Edit `.github/branch-protection/main.json` without treating its compatibility context list as
    an independent policy
 2. Create a PR with your changes
-3. Get at least one approving review
-4. **Before merging**, have an administrator run:
+3. Run the repository's documented checks and obtain any required external human
+   review for the affected workflow or protection change
+4. **Only for an approved protection change**, have an administrator run:
 
    ```bash
    bash scripts/apply-branch-protection.sh

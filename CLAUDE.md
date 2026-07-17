@@ -40,4 +40,10 @@ Relevant NATS subjects:
 - Test: `ctest --preset debug`
 - All tool invocations via `scripts/` wrappers
 - Never `--no-verify`. Never merge with red CI.
-- PRs to `main` require ≥1 approving review; never self-merge. See `docs/governance/branch-protection.md`.
+- PRs to `main` are gated by required status checks, resolved review
+  conversations, and linear history; live protection requires zero approving
+  reviews and does not dismiss stale reviews. Never self-merge. Independent
+  human review of workflow changes is an external gate for the staged
+  merge-queue rollout, not a live protection rule. See
+  `docs/governance/branch-protection.md` and
+  `docs/governance/merge-queue.md`.
