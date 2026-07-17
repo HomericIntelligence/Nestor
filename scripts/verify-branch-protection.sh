@@ -21,6 +21,27 @@ POLICY="${ROOT}/configs/github/merge-queue-policy.json"
 if ! jq -e '
   (.repository | type == "string" and length > 0)
   and (.target_branch | type == "string" and length > 0)
+  and (.activation_ruleset | type == "string" and length > 0)
+  and (.rulesets | type == "array" and length > 0)
+  and (all(.rulesets[];
+    (.name | type == "string" and length > 0)
+    and (.target | type == "string" and length > 0)
+    and (.enforcement | type == "string" and length > 0)
+    and (.source_type | type == "string" and length > 0)
+    and (.source | type == "string" and length > 0)
+    and (.conditions | type == "object")
+    and (.conditions.ref_name | type == "object")
+    and (.conditions.ref_name.include | type == "array" and length > 0)
+    and (all(.conditions.ref_name.include[]; type == "string" and length > 0))
+    and (.conditions.ref_name.exclude | type == "array")
+    and (all(.conditions.ref_name.exclude[]; type == "string" and length > 0))
+  ))
+  and (([.rulesets[].name] | length)
+    == ([.rulesets[].name] | unique | length))
+  and (.activation_ruleset as $activation
+    | ([.rulesets[].name] | index($activation) != null))
+  and (([.rulesets[].name] | sort)
+    == ([.required_checks[].authority] | unique | sort))
   and (.required_checks | type == "array" and length > 0)
   and (all(.required_checks[];
     (.context | type == "string" and length > 0)
@@ -96,6 +117,29 @@ while IFS= read -r authority; do
   ruleset_id=$(jq -r --arg authority "${authority}" \
     '.[] | select(.name == $authority) | .id' <<<"${rulesets}")
   ruleset=$(gh api "repos/${REPO}/rulesets/${ruleset_id}")
+  expected_identity=$(jq -S -c --arg authority "${authority}" '
+    .rulesets[] | select(.name == $authority)
+    | {target, enforcement, source_type, source}
+  ' "${POLICY}")
+  live_identity=$(jq -S -c '{target, enforcement, source_type, source}' <<<"${ruleset}")
+  if [ "${live_identity}" != "${expected_identity}" ]; then
+    echo "ERROR: ruleset identity differs for ${authority}"
+    echo "expected: ${expected_identity}"
+    echo "live:     ${live_identity}"
+    exit 1
+  fi
+
+  expected_conditions=$(jq -S -c --arg authority "${authority}" '
+    .rulesets[] | select(.name == $authority) | .conditions
+  ' "${POLICY}")
+  live_conditions=$(jq -S -c '.conditions' <<<"${ruleset}")
+  if [ "${live_conditions}" != "${expected_conditions}" ]; then
+    echo "ERROR: branch conditions differ for ruleset ${authority}"
+    echo "expected: ${expected_conditions}"
+    echo "live:     ${live_conditions}"
+    exit 1
+  fi
+
   expected_split=$(jq -c --arg authority "${authority}" '
     [.required_checks[] | select(.authority == $authority) | .context] | sort
   ' "${POLICY}")

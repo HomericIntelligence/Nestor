@@ -2,6 +2,34 @@
   "repository": "HomericIntelligence/Nestor",
   "target_branch": "main",
   "activation_ruleset": "homeric-main-baseline",
+  "rulesets": [
+    {
+      "name": "homeric-main-baseline",
+      "target": "branch",
+      "enforcement": "active",
+      "source_type": "Repository",
+      "source": "HomericIntelligence/Nestor",
+      "conditions": {
+        "ref_name": {
+          "exclude": [],
+          "include": ["refs/heads/main"]
+        }
+      }
+    },
+    {
+      "name": "homeric-main-extras",
+      "target": "branch",
+      "enforcement": "active",
+      "source_type": "Repository",
+      "source": "HomericIntelligence/Nestor",
+      "conditions": {
+        "ref_name": {
+          "exclude": [],
+          "include": ["refs/heads/main"]
+        }
+      }
+    }
+  ],
   "required_checks": [
     {
       "context": "All Build/Test Checks",

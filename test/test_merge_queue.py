@@ -9,6 +9,7 @@ import re
 import subprocess
 import tempfile
 import unittest
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -67,6 +68,33 @@ EXPECTED_QUEUE_RULE = {
     },
 }
 
+EXPECTED_RULESETS = {
+    "homeric-main-baseline": {
+        "target": "branch",
+        "enforcement": "active",
+        "source_type": "Repository",
+        "source": "HomericIntelligence/Nestor",
+        "conditions": {
+            "ref_name": {
+                "exclude": [],
+                "include": ["refs/heads/main"],
+            }
+        },
+    },
+    "homeric-main-extras": {
+        "target": "branch",
+        "enforcement": "active",
+        "source_type": "Repository",
+        "source": "HomericIntelligence/Nestor",
+        "conditions": {
+            "ref_name": {
+                "exclude": [],
+                "include": ["refs/heads/main"],
+            }
+        },
+    },
+}
+
 
 def load_workflow(filename: str) -> dict[str, Any]:
     data = yaml.safe_load((WORKFLOWS_DIR / filename).read_text())
@@ -109,12 +137,16 @@ def policy_contexts_by_authority() -> dict[str, list[str]]:
     return {authority: sorted(contexts) for authority, contexts in split.items()}
 
 
-def run_drift_check(split: dict[str, list[str]]) -> subprocess.CompletedProcess[str]:
+def run_drift_check(
+    split: dict[str, list[str]],
+    ruleset_overrides: dict[str, dict[str, Any]] | None = None,
+) -> subprocess.CompletedProcess[str]:
     policy = load_policy()
     repository = policy["repository"]
     target_branch = policy["target_branch"]
     authorities = sorted(policy_contexts_by_authority())
     ids = {authority: index + 100 for index, authority in enumerate(authorities)}
+    ruleset_overrides = ruleset_overrides or {}
     responses: dict[str, Any] = {
         f"repos/{repository}/rules/branches/{target_branch}": [
             {
@@ -136,13 +168,18 @@ def run_drift_check(split: dict[str, list[str]]) -> subprocess.CompletedProcess[
                 for contexts in split.values()
             ],
         ],
-        f"repos/{repository}/rulesets?includes_parents=true": [
-            {"id": ids[authority], "name": authority} for authority in authorities
-        ],
+        f"repos/{repository}/rulesets?includes_parents=true": [],
     }
     for authority, contexts in split.items():
+        contract = deepcopy(EXPECTED_RULESETS[authority])
+        contract.update(deepcopy(ruleset_overrides.get(authority, {})))
+        responses[f"repos/{repository}/rulesets?includes_parents=true"].append(
+            {"id": ids[authority], "name": authority, **contract}
+        )
         responses[f"repos/{repository}/rulesets/{ids[authority]}"] = {
+            "id": ids[authority],
             "name": authority,
+            **contract,
             "rules": [
                 {
                     "type": "required_status_checks",
@@ -191,6 +228,19 @@ class MergeQueueReadinessTests(unittest.TestCase):
         self.assertEqual(policy["repository"], "HomericIntelligence/Nestor")
         self.assertEqual(policy["target_branch"], "main")
         self.assertEqual(policy["activation_ruleset"], "homeric-main-baseline")
+        self.assertIn(policy["activation_ruleset"], EXPECTED_RULESETS)
+
+    def test_policy_pins_each_managed_ruleset_contract(self) -> None:
+        policy = load_policy()
+        self.assertEqual(
+            {
+                item["name"]: {
+                    key: value for key, value in item.items() if key != "name"
+                }
+                for item in policy["rulesets"]
+            },
+            EXPECTED_RULESETS,
+        )
 
     def test_policy_contexts_exist_once_in_their_declared_workflows(self) -> None:
         required_checks = load_policy()["required_checks"]
@@ -289,6 +339,50 @@ class MergeQueueReadinessTests(unittest.TestCase):
         split = policy_contexts_by_authority()
         split[sorted(split)[0]].pop()
         result = run_drift_check(split)
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_drift_preflight_rejects_ruleset_target_drift(self) -> None:
+        result = run_drift_check(
+            policy_contexts_by_authority(),
+            {"homeric-main-baseline": {"target": "tag"}},
+        )
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_drift_preflight_rejects_ruleset_enforcement_drift(self) -> None:
+        result = run_drift_check(
+            policy_contexts_by_authority(),
+            {"homeric-main-baseline": {"enforcement": "disabled"}},
+        )
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_drift_preflight_rejects_ruleset_source_type_drift(self) -> None:
+        result = run_drift_check(
+            policy_contexts_by_authority(),
+            {"homeric-main-baseline": {"source_type": "Organization"}},
+        )
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_drift_preflight_rejects_ruleset_source_drift(self) -> None:
+        result = run_drift_check(
+            policy_contexts_by_authority(),
+            {"homeric-main-baseline": {"source": "HomericIntelligence/Other"}},
+        )
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_drift_preflight_rejects_ruleset_branch_condition_drift(self) -> None:
+        result = run_drift_check(
+            policy_contexts_by_authority(),
+            {
+                "homeric-main-baseline": {
+                    "conditions": {
+                        "ref_name": {
+                            "exclude": [],
+                            "include": ["refs/heads/develop"],
+                        }
+                    }
+                }
+            },
+        )
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_merge_group_build_never_publishes_or_logs_into_ghcr(self) -> None:

@@ -104,7 +104,8 @@ To verify that the live settings match the canonical JSON:
 bash scripts/verify-branch-protection.sh
 ```
 
-This exits with code 0 only when the review invariants, complete effective context set, and exact
-per-ruleset split match policy. It is run automatically on every PR via the
+This exits with code 0 only when the review invariants, managed-ruleset target,
+enforcement, source identity, `main` branch conditions, complete effective context
+set, and exact per-ruleset split match policy. It is run automatically on every PR via the
 `branch-protection-drift` job in
 `.github/workflows/_required.yml`.
