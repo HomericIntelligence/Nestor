@@ -393,7 +393,9 @@ jobs:
         # genuine schema errors. See docs/runbooks/no-silent-failures.md (Bucket F).
         run: |
           set -euo pipefail
-          pip install check-jsonschema PyYAML
+          # Keep PyYAML aligned with the version resolved in pixi.lock; the
+          # merge-queue policy tests must not float independently in CI.
+          pip install check-jsonschema PyYAML==6.0.3
           find .github/workflows -name "*.yml" | \
             xargs check-jsonschema --builtin-schema vendor.github-workflows
       - name: Test merge-queue readiness

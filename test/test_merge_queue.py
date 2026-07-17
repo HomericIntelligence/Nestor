@@ -4,6 +4,10 @@
 from __future__ import annotations
 
 import json
+import os
+import re
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
@@ -14,7 +18,13 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
 POLICY_PATH = REPO_ROOT / "configs" / "github" / "merge-queue-policy.json"
-RUNBOOK_PATH = REPO_ROOT / "docs" / "governance" / "merge-queue.md"
+LOCK_PATH = REPO_ROOT / "pixi.lock"
+BRANCH_PROTECTION_PATH = REPO_ROOT / ".github" / "branch-protection" / "main.json"
+DRIFT_SCRIPT_PATH = REPO_ROOT / "scripts" / "verify-branch-protection.sh"
+GOVERNANCE_DOCS = (
+    REPO_ROOT / "docs" / "governance" / "branch-protection.md",
+    REPO_ROOT / "docs" / "governance" / "merge-queue.md",
+)
 
 REQUIRED_WORKFLOW_TRIGGERS = {
     "_required.yml": {
@@ -43,89 +53,6 @@ REQUIRED_WORKFLOW_TRIGGERS = {
         "merge_group": {"types": ["checks_requested"]},
     },
 }
-
-EXPECTED_REQUIRED_CHECKS = [
-    {
-        "context": "All Build/Test Checks",
-        "workflow": "build-test.yml",
-        "authority": "homeric-main-extras",
-    },
-    {
-        "context": "All Coverage Checks",
-        "workflow": "code-coverage.yml",
-        "authority": "homeric-main-extras",
-    },
-    {
-        "context": "All Static Analysis Checks",
-        "workflow": "static-analysis.yml",
-        "authority": "homeric-main-extras",
-    },
-    {
-        "context": "branch-protection-drift",
-        "workflow": "_required.yml",
-        "authority": "homeric-main-extras",
-    },
-    {
-        "context": "build",
-        "workflow": "_required.yml",
-        "authority": "homeric-main-baseline",
-    },
-    {
-        "context": "deps/version-sync",
-        "workflow": "_required.yml",
-        "authority": "homeric-main-baseline",
-    },
-    {
-        "context": "install",
-        "workflow": "docker-publish.yml",
-        "authority": "homeric-main-baseline",
-    },
-    {
-        "context": "integration-tests",
-        "workflow": "_required.yml",
-        "authority": "homeric-main-baseline",
-    },
-    {
-        "context": "lint",
-        "workflow": "_required.yml",
-        "authority": "homeric-main-baseline",
-    },
-    {
-        "context": "package",
-        "workflow": "docker-publish.yml",
-        "authority": "homeric-main-baseline",
-    },
-    {
-        "context": "release",
-        "workflow": "docker-publish.yml",
-        "authority": "homeric-main-baseline",
-    },
-    {
-        "context": "schema-validation",
-        "workflow": "_required.yml",
-        "authority": "homeric-main-baseline",
-    },
-    {
-        "context": "security/dependency-scan",
-        "workflow": "_required.yml",
-        "authority": "homeric-main-baseline",
-    },
-    {
-        "context": "security/secrets-scan",
-        "workflow": "_required.yml",
-        "authority": "homeric-main-baseline",
-    },
-    {
-        "context": "test",
-        "workflow": "_required.yml",
-        "authority": "homeric-main-baseline",
-    },
-    {
-        "context": "unit-tests",
-        "workflow": "_required.yml",
-        "authority": "homeric-main-baseline",
-    },
-]
 
 EXPECTED_QUEUE_RULE = {
     "type": "merge_queue",
@@ -168,6 +95,96 @@ def named_step(workflow: dict[str, Any], job_id: str, step_name: str) -> dict[st
     return next(step for step in steps if step.get("name") == step_name)
 
 
+def workflow_job_names(filename: str) -> list[str]:
+    jobs = load_workflow(filename)["jobs"]
+    return [job.get("name", job_id) for job_id, job in jobs.items()]
+
+
+def policy_contexts_by_authority() -> dict[str, list[str]]:
+    split: dict[str, list[str]] = {}
+    for required_check in load_policy()["required_checks"]:
+        split.setdefault(required_check["authority"], []).append(
+            required_check["context"]
+        )
+    return {authority: sorted(contexts) for authority, contexts in split.items()}
+
+
+def run_drift_check(split: dict[str, list[str]]) -> subprocess.CompletedProcess[str]:
+    policy = load_policy()
+    repository = policy["repository"]
+    target_branch = policy["target_branch"]
+    authorities = sorted(policy_contexts_by_authority())
+    ids = {authority: index + 100 for index, authority in enumerate(authorities)}
+    responses: dict[str, Any] = {
+        f"repos/{repository}/rules/branches/{target_branch}": [
+            {
+                "type": "pull_request",
+                "parameters": {
+                    "required_approving_review_count": 0,
+                    "required_review_thread_resolution": True,
+                },
+            },
+            *[
+                {
+                    "type": "required_status_checks",
+                    "parameters": {
+                        "required_status_checks": [
+                            {"context": context} for context in contexts
+                        ]
+                    },
+                }
+                for contexts in split.values()
+            ],
+        ],
+        f"repos/{repository}/rulesets?includes_parents=true": [
+            {"id": ids[authority], "name": authority} for authority in authorities
+        ],
+    }
+    for authority, contexts in split.items():
+        responses[f"repos/{repository}/rulesets/{ids[authority]}"] = {
+            "name": authority,
+            "rules": [
+                {
+                    "type": "required_status_checks",
+                    "parameters": {
+                        "required_status_checks": [
+                            {"context": context} for context in contexts
+                        ]
+                    },
+                }
+            ],
+        }
+
+    with tempfile.TemporaryDirectory() as directory:
+        temp = Path(directory)
+        responses_path = temp / "responses.json"
+        responses_path.write_text(json.dumps(responses))
+        gh_path = temp / "gh"
+        gh_path.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json, os, sys\n"
+            "if len(sys.argv) != 3 or sys.argv[1] != 'api':\n"
+            "    raise SystemExit(f'unexpected gh invocation: {sys.argv[1:]}')\n"
+            "responses = json.load(open(os.environ['MOCK_GH_RESPONSES']))\n"
+            "key = sys.argv[2]\n"
+            "if key not in responses:\n"
+            "    raise SystemExit(f'unexpected endpoint: {key}')\n"
+            "print(json.dumps(responses[key]))\n"
+        )
+        gh_path.chmod(0o755)
+        env = os.environ.copy()
+        env["PATH"] = f"{temp}:{env['PATH']}"
+        env["MOCK_GH_RESPONSES"] = str(responses_path)
+        return subprocess.run(
+            ["bash", str(DRIFT_SCRIPT_PATH)],
+            cwd=REPO_ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+
 class MergeQueueReadinessTests(unittest.TestCase):
     def test_policy_pins_repository_target_and_activation_ruleset(self) -> None:
         policy = load_policy()
@@ -175,13 +192,69 @@ class MergeQueueReadinessTests(unittest.TestCase):
         self.assertEqual(policy["target_branch"], "main")
         self.assertEqual(policy["activation_ruleset"], "homeric-main-baseline")
 
-    def test_policy_pins_exact_required_check_mapping(self) -> None:
-        self.assertEqual(load_policy()["required_checks"], EXPECTED_REQUIRED_CHECKS)
+    def test_policy_contexts_exist_once_in_their_declared_workflows(self) -> None:
+        required_checks = load_policy()["required_checks"]
+        contexts = [item["context"] for item in required_checks]
+        self.assertEqual(len(contexts), len(set(contexts)), "policy contexts must be unique")
+
+        workflows = {path.name for path in WORKFLOWS_DIR.glob("*.yml")}
+        emitted_by_workflow = {
+            workflow: workflow_job_names(workflow) for workflow in workflows
+        }
+        for item in required_checks:
+            with self.subTest(context=item["context"], workflow=item["workflow"]):
+                self.assertIn(item["context"], emitted_by_workflow[item["workflow"]])
+                owners = [
+                    workflow
+                    for workflow, emitted in emitted_by_workflow.items()
+                    if item["context"] in emitted
+                ]
+                self.assertEqual(owners, [item["workflow"]])
+
+    def test_legacy_branch_protection_contexts_derive_from_policy(self) -> None:
+        branch_protection = json.loads(BRANCH_PROTECTION_PATH.read_text())
+        self.assertEqual(
+            sorted(branch_protection["required_status_checks"]["contexts"]),
+            policy_contexts_by_authority()["homeric-main-extras"],
+        )
 
     def test_policy_pins_exact_queue_rule(self) -> None:
         self.assertEqual(load_policy()["merge_queue_rule"], EXPECTED_QUEUE_RULE)
 
+    def test_policy_transform_appends_only_the_approved_queue_rule(self) -> None:
+        snapshot = {
+            "name": "homeric-main-baseline",
+            "target": "branch",
+            "enforcement": "active",
+            "rules": [{"type": "deletion"}, {"type": "required_status_checks"}],
+        }
+        result = subprocess.run(
+            [
+                "jq",
+                "--slurpfile",
+                "policy",
+                str(POLICY_PATH),
+                ".rules += [$policy[0].merge_queue_rule]",
+            ],
+            input=json.dumps(snapshot),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        transformed = json.loads(result.stdout)
+        self.assertEqual(transformed["rules"][:-1], snapshot["rules"])
+        self.assertEqual(transformed["rules"][-1], load_policy()["merge_queue_rule"])
+        self.assertEqual(
+            {key: value for key, value in transformed.items() if key != "rules"},
+            {key: value for key, value in snapshot.items() if key != "rules"},
+        )
+
     def test_every_required_workflow_has_exact_trigger_contract(self) -> None:
+        policy_workflows = {
+            item["workflow"] for item in load_policy()["required_checks"]
+        }
+        self.assertEqual(set(REQUIRED_WORKFLOW_TRIGGERS), policy_workflows)
         for filename, expected in REQUIRED_WORKFLOW_TRIGGERS.items():
             with self.subTest(workflow=filename):
                 self.assertEqual(on_block(load_workflow(filename)), expected)
@@ -200,19 +273,23 @@ class MergeQueueReadinessTests(unittest.TestCase):
             workflow["permissions"], {"contents": "read", "security-events": "write"}
         )
 
-    def test_required_contexts_are_emitted_once_by_declared_workflows(self) -> None:
-        policy = load_policy()
-        expected = [item["context"] for item in policy["required_checks"]]
-        emitted: list[str] = []
+    def test_drift_preflight_accepts_exact_policy_split(self) -> None:
+        result = run_drift_check(policy_contexts_by_authority())
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-        for filename in REQUIRED_WORKFLOW_TRIGGERS:
-            jobs = load_workflow(filename)["jobs"]
-            for job_id, job in jobs.items():
-                emitted.append(job.get("name", job_id))
+    def test_drift_preflight_rejects_context_in_wrong_ruleset(self) -> None:
+        split = policy_contexts_by_authority()
+        authorities = sorted(split)
+        moved = split[authorities[0]].pop()
+        split[authorities[1]].append(moved)
+        result = run_drift_check(split)
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
 
-        policy_names = [name for name in emitted if name in expected]
-        self.assertEqual(sorted(policy_names), expected)
-        self.assertEqual(len(policy_names), len(set(policy_names)))
+    def test_drift_preflight_rejects_missing_context(self) -> None:
+        split = policy_contexts_by_authority()
+        split[sorted(split)[0]].pop()
+        result = run_drift_check(split)
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_merge_group_build_never_publishes_or_logs_into_ghcr(self) -> None:
         workflow = load_workflow("docker-publish.yml")
@@ -227,22 +304,20 @@ class MergeQueueReadinessTests(unittest.TestCase):
         workflow = load_workflow("_required.yml")
         schema_step = named_step(workflow, "schema-validation", "Validate workflow schemas")
         step = named_step(workflow, "schema-validation", "Test merge-queue readiness")
-        self.assertIn("pip install check-jsonschema PyYAML", schema_step["run"])
+        locked_versions = set(re.findall(r"/pyyaml-([^-]+)-", LOCK_PATH.read_text()))
+        self.assertEqual(len(locked_versions), 1)
+        locked_version = locked_versions.pop()
+        self.assertIn(f"PyYAML=={locked_version}", schema_step["run"])
         self.assertEqual(step["run"], "python3 test/test_merge_queue.py")
 
-    def test_runbook_keeps_activation_and_smoke_post_merge(self) -> None:
-        runbook = RUNBOOK_PATH.read_text()
-        for marker in (
-            "human workflow review",
-            "Post-merge activation",
-            "merge_queue_rule",
-            "required_checks",
-            "merge_group",
-            "Rollback",
-            "issue #128",
-        ):
-            with self.subTest(marker=marker):
-                self.assertIn(marker, runbook)
+    def test_governance_relative_links_resolve(self) -> None:
+        for document in GOVERNANCE_DOCS:
+            for target in re.findall(r"\[[^]]+\]\(([^)]+)\)", document.read_text()):
+                if target.startswith(("#", "http://", "https://", "mailto:")):
+                    continue
+                path = (document.parent / target.split("#", 1)[0]).resolve()
+                with self.subTest(document=document.name, target=target):
+                    self.assertTrue(path.exists(), f"broken relative link: {target}")
 
 
 if __name__ == "__main__":

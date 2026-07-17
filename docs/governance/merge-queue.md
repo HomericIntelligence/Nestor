@@ -7,8 +7,10 @@ issue #128 stays open until an operator activates the queue and records a
 representative queued smoke result.
 
 [`configs/github/merge-queue-policy.json`](../../configs/github/merge-queue-policy.json)
-is the only policy source for the exact required contexts, their posting
-workflows and protection layers, and the approved queue rule. Inspect it with:
+is the sole machine-readable policy authority for the exact required contexts,
+their posting workflows and protection layers, and the approved queue rule.
+The legacy `.github/branch-protection/main.json` context list is a tested
+compatibility projection, not another authority. Inspect the policy with:
 
 ```bash
 POLICY=configs/github/merge-queue-policy.json
@@ -39,19 +41,14 @@ RULESET_ID="$(gh api "repos/${REPO}/rulesets" \
   --jq ".[] | select(.name == \"${RULESET_NAME}\") | .id")"
 test -n "${RULESET_ID}"
 
+bash scripts/verify-branch-protection.sh
+
 gh api "repos/${REPO}/rulesets/${RULESET_ID}" \
   | jq '{name, target, enforcement, bypass_actors, conditions, rules}' \
   > /tmp/nestor-ruleset-before.json
 
 jq -e '[.rules[] | select(.type == "merge_queue")] | length == 0' \
   /tmp/nestor-ruleset-before.json
-
-EXPECTED_ALL="$(jq -c '[.required_checks[].context] | sort' "${POLICY}")"
-LIVE_ALL="$(gh api "repos/${REPO}/rules/branches/main" | jq -c '
-  [.[] | select(.type == "required_status_checks")
-   | .parameters.required_status_checks[].context] | sort
-')"
-test "${LIVE_ALL}" = "${EXPECTED_ALL}"
 
 jq --slurpfile policy "${POLICY}" -e '
   ([.rules[] | select(.type == "required_status_checks")
