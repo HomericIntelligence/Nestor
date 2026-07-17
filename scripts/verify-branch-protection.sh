@@ -15,11 +15,52 @@
 # conversation-thread resolution required, required status checks enforced.
 set -euo pipefail
 
-REPO="HomericIntelligence/Nestor"
+ROOT="$(git rev-parse --show-toplevel)"
+POLICY="${ROOT}/configs/github/merge-queue-policy.json"
+
+if ! jq -e '
+  (.repository | type == "string" and length > 0)
+  and (.target_branch | type == "string" and length > 0)
+  and (.activation_ruleset | type == "string" and length > 0)
+  and (.rulesets | type == "array" and length > 0)
+  and (all(.rulesets[];
+    (.name | type == "string" and length > 0)
+    and (.target | type == "string" and length > 0)
+    and (.enforcement | type == "string" and length > 0)
+    and (.source_type | type == "string" and length > 0)
+    and (.source | type == "string" and length > 0)
+    and (.conditions | type == "object")
+    and (.conditions.ref_name | type == "object")
+    and (.conditions.ref_name.include | type == "array" and length > 0)
+    and (all(.conditions.ref_name.include[]; type == "string" and length > 0))
+    and (.conditions.ref_name.exclude | type == "array")
+    and (all(.conditions.ref_name.exclude[]; type == "string" and length > 0))
+  ))
+  and (([.rulesets[].name] | length)
+    == ([.rulesets[].name] | unique | length))
+  and (.activation_ruleset as $activation
+    | ([.rulesets[].name] | index($activation) != null))
+  and (([.rulesets[].name] | sort)
+    == ([.required_checks[].authority] | unique | sort))
+  and (.required_checks | type == "array" and length > 0)
+  and (all(.required_checks[];
+    (.context | type == "string" and length > 0)
+    and (.workflow | type == "string" and length > 0)
+    and (.authority | type == "string" and length > 0)))
+  and (([.required_checks[].context] | length)
+    == ([.required_checks[].context] | unique | length))
+' "${POLICY}" >/dev/null; then
+  echo "ERROR: invalid or duplicate required context in ${POLICY}"
+  exit 1
+fi
+
+REPO="$(jq -r '.repository' "${POLICY}")"
+BRANCH="$(jq -r '.target_branch' "${POLICY}")"
+EXPECTED_ALL="$(jq -c '[.required_checks[].context] | sort' "${POLICY}")"
 
 # Fetch the effective branch rules for main. This returns a flat array of the
 # rules that apply to the branch (from branch protection and/or rulesets).
-rules=$(gh api "repos/${REPO}/rules/branches/main")
+rules=$(gh api "repos/${REPO}/rules/branches/${BRANCH}")
 
 # Helper: extract the parameters object for a given rule type.
 params_for() {
@@ -27,7 +68,6 @@ params_for() {
 }
 
 pr_params=$(params_for "pull_request")
-checks_params=$(params_for "required_status_checks")
 
 # A pull_request rule must be enforced (PRs required to merge to main).
 if [ -z "$pr_params" ]; then
@@ -49,16 +89,71 @@ if ! jq -e '.required_review_thread_resolution == true' <<<"$pr_params" >/dev/nu
   exit 1
 fi
 
-# A required_status_checks rule must be enforced so CI gates cannot be
-# bypassed by merging a red PR.
-if [ -z "$checks_params" ]; then
-  echo "ERROR: no enforced required_status_checks rule on main"
+# Compare the complete effective context list, preserving duplicates so that
+# overlap between rulesets cannot hide behind a set comparison.
+LIVE_ALL="$(jq -c '
+  [.[] | select(.type == "required_status_checks")
+   | .parameters.required_status_checks[]?.context] | sort
+' <<<"${rules}")"
+if [ "${LIVE_ALL}" != "${EXPECTED_ALL}" ]; then
+  echo "ERROR: effective required contexts differ from ${POLICY}"
+  echo "expected: ${EXPECTED_ALL}"
+  echo "live:     ${LIVE_ALL}"
   exit 1
 fi
 
-if ! jq -e '(.required_status_checks | length) >= 1' <<<"$checks_params" >/dev/null 2>&1; then
-  echo "ERROR: required_status_checks must enforce at least one check"
-  exit 1
-fi
+# Verify each named ruleset owns exactly the contexts assigned to it by the
+# policy. The effective branch endpoint alone cannot detect a context moved
+# from one protection layer to another.
+rulesets=$(gh api "repos/${REPO}/rulesets?includes_parents=true")
+while IFS= read -r authority; do
+  match_count=$(jq -r --arg authority "${authority}" \
+    '[.[] | select(.name == $authority)] | length' <<<"${rulesets}")
+  if [ "${match_count}" -ne 1 ]; then
+    echo "ERROR: expected exactly one live ruleset named ${authority}; found ${match_count}"
+    exit 1
+  fi
+
+  ruleset_id=$(jq -r --arg authority "${authority}" \
+    '.[] | select(.name == $authority) | .id' <<<"${rulesets}")
+  ruleset=$(gh api "repos/${REPO}/rulesets/${ruleset_id}")
+  expected_identity=$(jq -S -c --arg authority "${authority}" '
+    .rulesets[] | select(.name == $authority)
+    | {target, enforcement, source_type, source}
+  ' "${POLICY}")
+  live_identity=$(jq -S -c '{target, enforcement, source_type, source}' <<<"${ruleset}")
+  if [ "${live_identity}" != "${expected_identity}" ]; then
+    echo "ERROR: ruleset identity differs for ${authority}"
+    echo "expected: ${expected_identity}"
+    echo "live:     ${live_identity}"
+    exit 1
+  fi
+
+  expected_conditions=$(jq -S -c --arg authority "${authority}" '
+    .rulesets[] | select(.name == $authority) | .conditions
+  ' "${POLICY}")
+  live_conditions=$(jq -S -c '.conditions' <<<"${ruleset}")
+  if [ "${live_conditions}" != "${expected_conditions}" ]; then
+    echo "ERROR: branch conditions differ for ruleset ${authority}"
+    echo "expected: ${expected_conditions}"
+    echo "live:     ${live_conditions}"
+    exit 1
+  fi
+
+  expected_split=$(jq -c --arg authority "${authority}" '
+    [.required_checks[] | select(.authority == $authority) | .context] | sort
+  ' "${POLICY}")
+  live_split=$(jq -c '
+    [.rules[] | select(.type == "required_status_checks")
+     | .parameters.required_status_checks[]?.context] | sort
+  ' <<<"${ruleset}")
+
+  if [ "${live_split}" != "${expected_split}" ]; then
+    echo "ERROR: required contexts differ for ruleset ${authority}"
+    echo "expected: ${expected_split}"
+    echo "live:     ${live_split}"
+    exit 1
+  fi
+done < <(jq -r '[.required_checks[].authority] | unique[]' "${POLICY}")
 
 echo "branch-protection-drift: OK"

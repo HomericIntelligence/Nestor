@@ -1,0 +1,127 @@
+{
+  "repository": "HomericIntelligence/Nestor",
+  "target_branch": "main",
+  "activation_ruleset": "homeric-main-baseline",
+  "rulesets": [
+    {
+      "name": "homeric-main-baseline",
+      "target": "branch",
+      "enforcement": "active",
+      "source_type": "Repository",
+      "source": "HomericIntelligence/Nestor",
+      "conditions": {
+        "ref_name": {
+          "exclude": [],
+          "include": ["refs/heads/main"]
+        }
+      }
+    },
+    {
+      "name": "homeric-main-extras",
+      "target": "branch",
+      "enforcement": "active",
+      "source_type": "Repository",
+      "source": "HomericIntelligence/Nestor",
+      "conditions": {
+        "ref_name": {
+          "exclude": [],
+          "include": ["refs/heads/main"]
+        }
+      }
+    }
+  ],
+  "required_checks": [
+    {
+      "context": "All Build/Test Checks",
+      "workflow": "build-test.yml",
+      "authority": "homeric-main-extras"
+    },
+    {
+      "context": "All Coverage Checks",
+      "workflow": "code-coverage.yml",
+      "authority": "homeric-main-extras"
+    },
+    {
+      "context": "All Static Analysis Checks",
+      "workflow": "static-analysis.yml",
+      "authority": "homeric-main-extras"
+    },
+    {
+      "context": "branch-protection-drift",
+      "workflow": "_required.yml",
+      "authority": "homeric-main-extras"
+    },
+    {
+      "context": "build",
+      "workflow": "_required.yml",
+      "authority": "homeric-main-baseline"
+    },
+    {
+      "context": "deps/version-sync",
+      "workflow": "_required.yml",
+      "authority": "homeric-main-baseline"
+    },
+    {
+      "context": "install",
+      "workflow": "docker-publish.yml",
+      "authority": "homeric-main-baseline"
+    },
+    {
+      "context": "integration-tests",
+      "workflow": "_required.yml",
+      "authority": "homeric-main-baseline"
+    },
+    {
+      "context": "lint",
+      "workflow": "_required.yml",
+      "authority": "homeric-main-baseline"
+    },
+    {
+      "context": "package",
+      "workflow": "docker-publish.yml",
+      "authority": "homeric-main-baseline"
+    },
+    {
+      "context": "release",
+      "workflow": "docker-publish.yml",
+      "authority": "homeric-main-baseline"
+    },
+    {
+      "context": "schema-validation",
+      "workflow": "_required.yml",
+      "authority": "homeric-main-baseline"
+    },
+    {
+      "context": "security/dependency-scan",
+      "workflow": "_required.yml",
+      "authority": "homeric-main-baseline"
+    },
+    {
+      "context": "security/secrets-scan",
+      "workflow": "_required.yml",
+      "authority": "homeric-main-baseline"
+    },
+    {
+      "context": "test",
+      "workflow": "_required.yml",
+      "authority": "homeric-main-baseline"
+    },
+    {
+      "context": "unit-tests",
+      "workflow": "_required.yml",
+      "authority": "homeric-main-baseline"
+    }
+  ],
+  "merge_queue_rule": {
+    "type": "merge_queue",
+    "parameters": {
+      "check_response_timeout_minutes": 60,
+      "grouping_strategy": "ALLGREEN",
+      "max_entries_to_build": 10,
+      "max_entries_to_merge": 5,
+      "merge_method": "SQUASH",
+      "min_entries_to_merge": 1,
+      "min_entries_to_merge_wait_minutes": 5
+    }
+  }
+}
