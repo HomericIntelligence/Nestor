@@ -21,7 +21,8 @@ Nestor transforms raw ideas into researched briefs that Agamemnon can plan and e
 - C++20 toolchain (GCC 12+ or Clang 15+; CI tests against GCC 14 / Clang 17)
 - CMake 3.20+
 - [Conan](https://docs.conan.io/) 2.x — provides `cpp-httplib`, `nlohmann_json`, and `gtest`
-- [uv](https://docs.astral.sh/uv/) — manages the pinned build toolchain (CMake, Ninja, Conan, gcovr, pre-commit) as locked PyPI wheels (Odysseus ADR-018)
+- [uv](https://docs.astral.sh/uv/) — manages the pinned build toolchain
+  (CMake, Ninja, Conan, gcovr, pre-commit) as locked PyPI wheels (Odysseus ADR-018)
 - [just](https://github.com/casey/just) — recipe runner
 - (Optional) [Doxygen](https://www.doxygen.nl/) — for `just docs`
 - (Optional) [Podman](https://podman.io/) or Docker — for container builds
