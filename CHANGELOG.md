@@ -9,6 +9,16 @@ The release process is documented in `docs/RELEASING.md`.
 
 ## [Unreleased]
 
+### Changed
+
+- `feat(build)`: migrate from pixi to uv for the build toolchain (Odysseus
+  ADR-018, mirroring Agamemnon #457). CMake/Ninja/Conan/gcovr/pre-commit are now
+  uv-managed locked PyPI wheels (`pyproject.toml` + `uv.lock`); the C++ compiler,
+  clang-tidy/clang-format, and OpenSSL dev headers come from the system (apt).
+  CI swaps `prefix-dev/setup-pixi` for `astral-sh/setup-uv` and the `pixi-check`
+  job becomes `uv-check`; all required check-run names are preserved. The
+  Dockerfile builder pulls uv via a pinned `COPY --from` named stage.
+
 ### Added
 
 - `AGENTS.md` documenting multi-agent coordination protocols.

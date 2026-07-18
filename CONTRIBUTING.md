@@ -22,9 +22,9 @@ For an overview of the full ecosystem, see the
 
 - [Git](https://git-scm.com/)
 - [GitHub CLI](https://cli.github.com/) (`gh`)
-- [Pixi](https://pixi.sh/) for environment management
+- [uv](https://docs.astral.sh/uv/) for the pinned build toolchain (Odysseus ADR-018)
 - [Just](https://just.systems/) as the command runner
-- C++20 compiler (GCC 12+ or Clang 15+)
+- C++20 compiler (GCC 12+ or Clang 15+); clang-tidy/clang-format + libssl-dev from your package manager
 
 ### Environment Setup
 
@@ -33,8 +33,8 @@ For an overview of the full ecosystem, see the
 git clone https://github.com/HomericIntelligence/Nestor.git
 cd Nestor
 
-# Activate the Pixi environment (installs CMake, Ninja, clang-tools, gcovr)
-pixi shell
+# Install the locked build toolchain (CMake, Ninja, Conan, gcovr, pre-commit)
+uv sync
 
 # Build the project
 just build
@@ -43,14 +43,15 @@ just build
 just test
 ```
 
-Non-Linux contributors (ARM64, macOS): pixi is currently Linux-64 only — install
-Conan, CMake, and Ninja directly and follow `conan/profiles/README.md`.
+The C++ compiler, clang-tidy/clang-format, and the OpenSSL dev headers come from
+your system package manager (e.g. `apt install g++ clang-tidy clang-format libssl-dev`);
+uv manages only the CMake/Ninja/Conan/gcovr build toolchain as locked wheels.
 
 ### Install Pre-commit Hooks
 
 ```bash
 # Install hooks (clang-format, conventional commits, trailing whitespace)
-pre-commit install
+uv run pre-commit install
 ```
 
 ### Verify Your Setup

@@ -21,7 +21,7 @@ Nestor transforms raw ideas into researched briefs that Agamemnon can plan and e
 - C++20 toolchain (GCC 12+ or Clang 15+; CI tests against GCC 14 / Clang 17)
 - CMake 3.20+
 - [Conan](https://docs.conan.io/) 2.x — provides `cpp-httplib`, `nlohmann_json`, and `gtest`
-- [pixi](https://pixi.sh/) — pinned task runner
+- [uv](https://docs.astral.sh/uv/) — manages the pinned build toolchain (CMake, Ninja, Conan, gcovr, pre-commit) as locked PyPI wheels (Odysseus ADR-018)
 - [just](https://github.com/casey/just) — recipe runner
 - (Optional) [Doxygen](https://www.doxygen.nl/) — for `just docs`
 - (Optional) [Podman](https://podman.io/) or Docker — for container builds
@@ -32,15 +32,17 @@ Conan provides `cpp-httplib`, `nlohmann_json`, and `gtest`. Install
 dependencies first — the CMake presets expect the Conan toolchain at
 `build/debug/`.
 
-First-time setup: `conan profile detect --exist-ok` generates your host's base
+First-time setup: `uv sync` installs the locked build toolchain (CMake, Ninja,
+Conan, gcovr); `conan profile detect --exist-ok` then generates your host's base
 profile (the committed profiles extend it via `include(default)`). `just deps`
-runs this automatically.
+runs both automatically.
 
 ```bash
+uv sync            # install the locked CMake/Ninja/Conan/gcovr toolchain
 just deps          # bootstrap + conan install --profile:all=conan/profiles/nestor-debug
-cmake --preset debug
-cmake --build --preset debug
-ctest --preset debug
+uv run cmake --preset debug
+uv run cmake --build --preset debug
+uv run ctest --preset debug
 ```
 
 Or via the all-in-one recipes:
@@ -50,9 +52,10 @@ just build
 just test
 ```
 
-**Non-Linux hosts (ARM64, macOS):** `pixi` is currently Linux-64 only. Install
-Conan, CMake, and Ninja directly and follow `conan/profiles/README.md` for the
-manual build path.
+**Non-Linux hosts (ARM64, macOS):** uv installs the CMake/Ninja/Conan wheels
+cross-platform. If a wheel is unavailable for your platform, install Conan,
+CMake, and Ninja directly and follow `conan/profiles/README.md` for the manual
+build path.
 
 ## Running
 

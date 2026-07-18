@@ -1,6 +1,9 @@
 build/
 install/
 .cache/
+
+# uv (ADR-018): uv.lock IS committed; only the virtualenv is ignored.
+.venv/
 *.o
 *.a
 *.so

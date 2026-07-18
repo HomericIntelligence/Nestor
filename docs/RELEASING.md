@@ -5,14 +5,16 @@ Automation is tracked separately (see `docs/ROADMAP.md`, milestone v0.3.0).
 
 ## Version sources of truth
 
-The version `MAJOR.MINOR.PATCH` is currently duplicated in four places:
+The version `MAJOR.MINOR.PATCH` is currently duplicated in three places:
 
 1. `CMakeLists.txt` — `project(... VERSION X.Y.Z ...)`.
 2. `conanfile.py` — `version = "X.Y.Z"`.
 3. `include/nestor/version.hpp` — `constexpr` literals.
-4. `pixi.toml` — `version = "X.Y.Z"` under `[project]`.
 
-A future automation will collapse these to one. Until then, **all four must
+(The `pyproject.toml` `version` field pins the uv build-toolchain environment,
+not the Nestor artifact; it is decoupled from the release version.)
+
+A future automation will collapse these to one. Until then, **all three must
 be bumped in the same commit**.
 
 ## Release procedure
