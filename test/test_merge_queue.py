@@ -19,7 +19,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
 POLICY_PATH = REPO_ROOT / "configs" / "github" / "merge-queue-policy.json"
-LOCK_PATH = REPO_ROOT / "pixi.lock"
+LOCK_PATH = REPO_ROOT / "uv.lock"
 BRANCH_PROTECTION_PATH = REPO_ROOT / ".github" / "branch-protection" / "main.json"
 DRIFT_SCRIPT_PATH = REPO_ROOT / "scripts" / "verify-branch-protection.sh"
 GOVERNANCE_DOCS = (
@@ -415,7 +415,15 @@ class MergeQueueReadinessTests(unittest.TestCase):
         workflow = load_workflow("_required.yml")
         schema_step = named_step(workflow, "schema-validation", "Validate workflow schemas")
         step = named_step(workflow, "schema-validation", "Test merge-queue readiness")
-        locked_versions = set(re.findall(r"/pyyaml-([^-]+)-", LOCK_PATH.read_text()))
+        # uv.lock records each dependency as a `[[package]]` TOML block; read the
+        # PyYAML block's `version` field (the canonical uv pin) rather than parsing
+        # wheel-URL filenames, which vary between sdist/wheel entries.
+        lock_text = LOCK_PATH.read_text()
+        pyyaml_block = re.search(
+            r'\[\[package\]\]\nname = "pyyaml"\nversion = "([^"]+)"',
+            lock_text,
+        )
+        locked_versions = {pyyaml_block.group(1)} if pyyaml_block else set()
         self.assertEqual(len(locked_versions), 1)
         locked_version = locked_versions.pop()
         self.assertIn(f"PyYAML=={locked_version}", schema_step["run"])

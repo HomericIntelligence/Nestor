@@ -28,7 +28,7 @@ conan profile detect --exist-ok
 already exists, preserving any hand-tuned settings.
 
 > **Note:** `--exist-ok` requires Conan >= 2.3 (the minimum pinned in
-> `pixi.toml`). If you installed Conan independently and are on an older
+> `pyproject.toml`). If you installed Conan independently and are on an older
 > version, upgrade or run `conan profile detect --force` manually once.
 
 ## Cross-compilation
@@ -48,9 +48,9 @@ platform's base profile and pass it as `--profile:host=`.
 
 ## ARM64 / macOS contributors
 
-`pixi.toml` restricts the pixi environment to `linux-64` (toolchain
-availability on conda-forge for macOS/ARM64 is a separate investigation). On
-ARM64 or macOS, install Conan, CMake, and Ninja directly, then:
+uv installs the CMake/Ninja/Conan wheels cross-platform, but if a wheel is
+unavailable for your platform (macOS/ARM64 support varies by release), install
+Conan, CMake, and Ninja directly, then:
 
 ```bash
 conan profile detect --exist-ok   # generates ~/.conan2/profiles/default

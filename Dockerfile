@@ -1,35 +1,46 @@
+# ── uv binary source ──────────────────────────────────────────────────────────
+# Pulled as a named stage so `COPY --from=uv` resolves identically under both
+# podman/buildah and docker. A bare `COPY --from=ghcr.io/astral-sh/uv:<tag>@<digest>`
+# (tag AND digest together) is rejected by buildah with "no stage or image found
+# with that name", so we alias the digest-pinned image to a stage name here and
+# COPY from the alias. Keep this pin in sync with astral-sh/setup-uv in
+# .github/workflows/*.yml when bumping.
+FROM ghcr.io/astral-sh/uv:0.11.21@sha256:ff07b86af50d4d9391d9daf4ff89ce427bc544f9aae87057e69a1cc0aa369946 AS uv
+
+# ── Builder ───────────────────────────────────────────────────────────────────
 FROM ubuntu@sha256:c4a8d5503dfb2a3eb8ab5f807da5bc69a85730fb49b5cfca2330194ebcc41c7b AS builder
 # ubuntu:24.04 — pinned for reproducible builds (#60)
 
-# apt packages unpinned on purpose: the base image digest above is the
-# version lock (same policy as AchaeanFleet's fleet-wide hadolint config).
+# apt provides only the compiler + OpenSSL headers + git/ca-certificates. The
+# CMake/Ninja/Conan build toolchain is managed by uv as locked PyPI wheels
+# (Odysseus ADR-018), not apt. apt packages unpinned on purpose: the base image
+# digest above is the version lock (same policy as AchaeanFleet's fleet-wide
+# hadolint config).
 # hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    cmake \
-    ninja-build \
     make \
     g++ \
     git \
     ca-certificates \
     libssl-dev \
-    python3 \
-    python3-pip \
-    python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Conan inside an isolated venv to avoid PEP 668 / system-package
-# conflicts (no --break-system-packages). Symlink the entrypoint onto PATH.
-RUN python3 -m venv /opt/conan-venv \
-    && /opt/conan-venv/bin/pip install --no-cache-dir conan \
-    && ln -s /opt/conan-venv/bin/conan /usr/local/bin/conan \
-    && conan profile detect --force
+# uv binary (manages cmake/ninja/conan/gcovr/pre-commit as locked wheels).
+COPY --from=uv /uv /uvx /usr/local/bin/
 
 WORKDIR /src
+
+# Sync the locked build toolchain first so it caches independently of sources.
+COPY pyproject.toml uv.lock ./
+RUN uv sync --locked
+
+# conan's `include(default)` profile autodetects the system g++ installed above.
+RUN uv run conan profile detect --force
 
 # Copy Conan files first for dependency caching.
 COPY conanfile.py ./
 COPY conan/ conan/
-RUN conan install . \
+RUN uv run conan install . \
     --output-folder=build \
     --profile:all=conan/profiles/nestor-release \
     --build=missing
@@ -43,13 +54,13 @@ COPY include/ include/
 COPY src/ src/
 COPY test/ test/
 
-RUN cmake -B build -G Ninja \
+RUN uv run cmake -B build -G Ninja \
     -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake \
     -DCMAKE_BUILD_TYPE=Release \
     -DNestor_BUILD_TESTING=OFF \
     -DNestor_ENABLE_CLANG_TIDY=OFF \
     -DNestor_ENABLE_CPPCHECK=OFF \
-    && cmake --build build --target Nestor_server
+    && uv run cmake --build build --target Nestor_server
 
 # ── Runtime image ─────────────────────────────────────────────────────────────
 FROM ubuntu@sha256:c4a8d5503dfb2a3eb8ab5f807da5bc69a85730fb49b5cfca2330194ebcc41c7b

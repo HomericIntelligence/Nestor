@@ -136,24 +136,22 @@ jobs:
       - name: Configure with clang-tidy
         run: cmake --preset debug -DNestor_ENABLE_CLANG_TIDY=ON
       - name: clang-tidy check
+        # clang-tidy comes from apt (installed above), not from the uv build
+        # toolchain (ADR-018): it has no maintained self-contained PyPI wheel.
         run: |
           set -euo pipefail
-          if pixi run clang-tidy 2>/dev/null; then
-            echo "pixi clang-tidy passed"
+          mapfile -t cpp_files < <(find src -name "*.cpp" | head -5)
+          if [ "${#cpp_files[@]}" -gt 0 ]; then
+            # build/debug/compile_commands.json comes from the GCC build and
+            # contains GCC-only warning flags (-Wduplicated-branches,
+            # -Wduplicated-cond, -Wlogical-op, -Wuseless-cast). Tell clang to
+            # treat unknown warning options as warnings, not as
+            # clang-diagnostic-unknown-warning-option errors.
+            clang-tidy -p build/debug \
+              --extra-arg-before=-Wno-unknown-warning-option \
+              "${cpp_files[@]}"
           else
-            mapfile -t cpp_files < <(find src -name "*.cpp" | head -5)
-            if [ "${#cpp_files[@]}" -gt 0 ]; then
-              # build/debug/compile_commands.json comes from the GCC build and
-              # contains GCC-only warning flags (-Wduplicated-branches,
-              # -Wduplicated-cond, -Wlogical-op, -Wuseless-cast). Tell clang to
-              # treat unknown warning options as warnings, not as
-              # clang-diagnostic-unknown-warning-option errors.
-              clang-tidy -p build/debug \
-                --extra-arg-before=-Wno-unknown-warning-option \
-                "${cpp_files[@]}"
-            else
-              echo "::notice::no src/*.cpp files found to clang-tidy"
-            fi
+            echo "WARN: no src/*.cpp files found to clang-tidy"
           fi
 
   unit-tests:
@@ -315,14 +313,29 @@ jobs:
           scan-type: fs
           scan-ref: .
           exit-code: 0
+      - name: Setup uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78  # v7.6.0
+        with:
+          enable-cache: true
+      - name: Sync build toolchain (uv)
+        # uv provides conan (and the rest of the C++ build toolchain) as locked
+        # PyPI wheels per Odysseus ADR-018 — replaces the former `pip install conan`.
+        run: uv sync --locked
       - name: Conan audit
         run: |
-          pip install conan
-          if pixi run conan-audit 2>/dev/null; then
-            echo "Conan audit passed"
+          set -euo pipefail
+          # Detect a default profile so conan can resolve the graph, then audit
+          # the dependency tree for known CVEs. `conan audit` requires a
+          # provider token (CONAN_AUDIT_PROVIDER_TOKEN); when absent we emit an
+          # informational note instead of failing the security gate.
+          uv run conan profile detect --exist-ok
+          if [ -n "${CONAN_AUDIT_PROVIDER_TOKEN:-}" ]; then
+            uv run conan audit scan .
           else
-            echo "::notice::pixi run conan-audit not available or no issues found"
+            echo "WARN: CONAN_AUDIT_PROVIDER_TOKEN unset — skipping conan audit scan"
           fi
+        env:
+          CONAN_AUDIT_PROVIDER_TOKEN: ${{ secrets.CONAN_AUDIT_PROVIDER_TOKEN }}
 
   security-secrets-scan:
     name: security/secrets-scan
@@ -391,7 +404,7 @@ jobs:
         # genuine schema errors. See docs/runbooks/no-silent-failures.md (Bucket F).
         run: |
           set -euo pipefail
-          # Keep PyYAML aligned with the version resolved in pixi.lock; the
+          # Keep PyYAML aligned with the version resolved in uv.lock; the
           # merge-queue policy tests must not float independently in CI.
           pip install check-jsonschema PyYAML==6.0.3
           find .github/workflows -name "*.yml" | \
@@ -428,8 +441,8 @@ jobs:
           globs: "**/*.md"
           config: ".markdownlint.yaml"
 
-  pixi-check:
-    name: pixi-check
+  uv-check:
+    name: uv-check
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     needs: lint
@@ -437,35 +450,20 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-      - name: Skip if no pixi.toml
-        id: detect
-        run: |
-          if [ ! -f pixi.toml ]; then
-            echo "::notice::No pixi.toml in repo, skipping pixi-check"
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-      - name: Setup pixi
-        if: steps.detect.outputs.skip == 'false'
-        uses: prefix-dev/setup-pixi@5185adfbffb4bd703da3010310260805d89ebb11  # v0.9.6
+      - name: Setup uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78  # v7.6.0
         with:
-          # pixi.lock is format v7 (written by newer local pixi); v0.67.2 only
-          # reads up to v6 and the job fails before any check runs.
-          pixi-version: v0.72.0
-          cache: false
-      - name: pixi install (locked)
-        if: steps.detect.outputs.skip == 'false'
-        # Require pixi.lock to be committed alongside pixi.toml. Running
-        # `pixi install` unlocked was previously tolerated with an advisory
-        # `::warning::`, which silently let dependency drift slip into CI.
-        # See docs/runbooks/no-silent-failures.md (Bucket F).
-        run: |
-          if [ ! -f pixi.lock ]; then
-            echo "::error::pixi.toml present but pixi.lock missing — commit pixi.lock alongside pixi.toml to pin dependencies."
-            exit 1
-          fi
-          pixi install --locked
+          enable-cache: true
+      # Assert the committed uv.lock is in sync with pyproject.toml (ADR-018:
+      # uv replaces pixi). `uv lock --check` fails if the lockfile would change,
+      # i.e. it was not regenerated after a manifest edit — the uv equivalent of
+      # the former `pixi install --locked` gate.
+      - name: Check build-toolchain lock
+        run: uv lock --check
+      # `uv sync --locked` proves the pinned wheels (cmake/ninja/conan/gcovr/
+      # pre-commit) actually resolve and install from the committed lock.
+      - name: Install build toolchain (locked)
+        run: uv sync --locked
 
   justfile-check:
     name: justfile-check
