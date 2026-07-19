@@ -118,8 +118,7 @@ podman run --rm -p 8080:8080 \
 
 ## Documentation
 
-- `CLAUDE.md` — agent operational conventions.
-- `AGENTS.md` — multi-agent coordination protocol.
+- `AGENTS.md` — authoritative agent contract: coordination protocol and operational conventions.
 - `CONTRIBUTING.md` — contribution workflow.
 - `SECURITY.md` — vulnerability disclosure.
 - `CODE_OF_CONDUCT.md` — community guidelines.

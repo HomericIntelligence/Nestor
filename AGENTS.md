@@ -1,7 +1,29 @@
 # AGENTS.md — Nestor
 
-This document specifies the multi-agent coordination protocols for Nestor
-within the HomericIntelligence distributed agent mesh.
+This document is the sole authoritative agent contract for Nestor. It
+specifies the multi-agent coordination protocols for Nestor within the
+HomericIntelligence distributed agent mesh, plus single-agent operational
+conventions (project overview, architecture, and development guidelines).
+
+## Project overview
+
+Nestor is the research, ideation, and search service for the
+HomericIntelligence distributed agent mesh. It receives ideas/tasks from
+Odysseus and runs them through a research pipeline:
+
+- IDEA → RESEARCH & SEARCH → REVIEW GATE → RESEARCHED BRIEF
+- Research myrmidons pull from `hi.research.*` subjects (rate-limited,
+  MaxAckPending=1)
+- Uses Telemachy internally for workflow orchestration
+- Bidirectional: can escalate to Odysseus/user for review at the review gate
+- Hands off approved researched briefs to Agamemnon for planning
+
+### Key responsibilities
+
+1. **Research phase:** Codebase exploration, doc search, feasibility, prior art
+2. **Review gate:** approve → researched brief; clarify → re-enqueue;
+   escalate → Odysseus
+3. **Handoff:** Researched briefs passed to Agamemnon for planning breakdown
 
 ## Role boundary
 
@@ -23,6 +45,19 @@ Nestor must **not**:
 - Plan, dispatch, or execute tasks (that is Agamemnon's role).
 - Provision agents (that is ProjectTelemachy's role).
 - Make architecture decisions (that is ProjectOdyssey / ADRs).
+
+## Architecture
+
+All communication flows **through ProjectKeystone** (invisible transport):
+
+- Local (intra-host): BlazingMQ + C++20 MessageBus
+- Cross-host: NATS JetStream via nats.c v3.12.0 over Tailscale
+
+Relevant NATS subjects:
+
+- `hi.research.>` — research task queue (PULL consumers, research myrmidons
+  pull from here)
+- `hi.pipeline.>` — pipeline state updates (pub to Odysseus)
 
 ## Handoff contract
 
@@ -74,8 +109,22 @@ All Nestor-published messages conform to ADR-005 NATS subject schema. Field
 names are stable across minor versions; breaking changes require an ADR
 reference and a major-version bump.
 
+## Development guidelines
+
+- Language: C++20 exclusively
+- Build: `cmake --preset debug` / `cmake --build --preset debug`
+- Test: `ctest --preset debug`
+- All tool invocations via `scripts/` wrappers
+- Never `--no-verify`. Never merge with red CI.
+- PRs to `main` are gated by required status checks, resolved review
+  conversations, and linear history; live protection requires zero approving
+  reviews and does not dismiss stale reviews. Never self-merge. Independent
+  human review of workflow changes is an external gate for the staged
+  merge-queue rollout, not a live protection rule. See
+  `docs/governance/branch-protection.md` and
+  `docs/governance/merge-queue.md`.
+
 ## See also
 
-- `CLAUDE.md` — single-agent operational conventions.
 - `docs/adr/` — architectural decisions (when published).
 - Odysseus `docs/adr/005-nats-subject-schema.md`.
