@@ -27,30 +27,34 @@ GOVERNANCE_DOCS = (
     REPO_ROOT / "docs" / "governance" / "merge-queue.md",
 )
 
+# merge_group is deliberately absent from every full workflow below: merge-queue
+# runs are handled exclusively by the single fast merge-queue-smoke job in
+# merge-queue-smoke.yml so a queued merge consumes one runner slot, not 16+.
 REQUIRED_WORKFLOW_TRIGGERS = {
     "_required.yml": {
         "push": {"branches": ["main"]},
         "pull_request": {"branches": ["main"]},
-        "merge_group": {"types": ["checks_requested"]},
     },
     "build-test.yml": {
         "push": {"branches": ["main"]},
         "pull_request": {"branches": ["main"]},
-        "merge_group": {"types": ["checks_requested"]},
     },
     "code-coverage.yml": {
         "push": {"branches": ["main"]},
         "pull_request": {"branches": ["main"]},
-        "merge_group": {"types": ["checks_requested"]},
     },
     "docker-publish.yml": {
         "push": {"branches": ["main"], "tags": ["v*.*.*"]},
         "pull_request": {"branches": ["main"]},
-        "merge_group": {"types": ["checks_requested"]},
     },
     "static-analysis.yml": {
         "push": {"branches": ["main"]},
         "pull_request": {"branches": ["main"]},
+    },
+}
+
+MERGE_QUEUE_SMOKE_TRIGGERS = {
+    "merge-queue-smoke.yml": {
         "merge_group": {"types": ["checks_requested"]},
     },
 }
@@ -308,6 +312,19 @@ class MergeQueueReadinessTests(unittest.TestCase):
         for filename, expected in REQUIRED_WORKFLOW_TRIGGERS.items():
             with self.subTest(workflow=filename):
                 self.assertEqual(on_block(load_workflow(filename)), expected)
+
+    def test_merge_queue_smoke_workflow_has_exact_trigger_contract(self) -> None:
+        for filename, expected in MERGE_QUEUE_SMOKE_TRIGGERS.items():
+            with self.subTest(workflow=filename):
+                workflow = load_workflow(filename)
+                self.assertEqual(on_block(workflow), expected)
+                self.assertEqual(list(workflow["jobs"]), ["merge-queue-smoke"])
+                self.assertEqual(
+                    workflow["jobs"]["merge-queue-smoke"]["name"], "merge-queue-smoke"
+                )
+                self.assertEqual(
+                    workflow["jobs"]["merge-queue-smoke"]["timeout-minutes"], 5
+                )
 
     def test_codeql_schedule_and_security_permissions_remain_unchanged(self) -> None:
         workflow = load_workflow("codeql.yml")
