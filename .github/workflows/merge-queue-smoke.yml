@@ -1,0 +1,47 @@
+name: Merge Queue Smoke
+
+on:
+  merge_group:
+    types: [checks_requested]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mq-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  merge-queue-smoke:
+    name: merge-queue-smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+
+      - name: Validate workflow schemas (vendored, network-free)
+        run: |
+          set -euo pipefail
+          # Keep PyYAML aligned with the version resolved in pixi.lock; the
+          # merge-queue policy tests must not float independently in CI.
+          pip install check-jsonschema PyYAML==6.0.3 --quiet
+          find .github/workflows -name "*.yml" -print0 | \
+            xargs -0 check-jsonschema --builtin-schema vendor.github-workflows
+
+      - name: Test merge-queue readiness
+        run: python3 test/test_merge_queue.py
+
+      - name: yamllint workflow definitions
+        run: |
+          set -euo pipefail
+          pip install yamllint --quiet
+          yamllint -d relaxed .github/
+
+      - name: Check CMake version parseable
+        run: |
+          python3 -c "
+          import re
+          cmake = open('CMakeLists.txt').read()
+          v = re.search(r'VERSION\s+(\S+)', cmake).group(1)
+          print(f'CMake version: {v}')
+          "
