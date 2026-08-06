@@ -1,0 +1,131 @@
+# Containerfile for nestor-ci — CI image for the Nestor C++20 service.
+#
+# This image provides the complete CI toolchain:
+# - Ubuntu 24.04 base with the system compiler (gcc/g++), clang, clang-format,
+#   clang-tidy, ninja, OpenSSL dev headers (same apt sources as the
+#   ubuntu-24.04 runner image)
+# - uv with the locked root toolchain environment pre-installed (cmake, conan,
+#   ninja, gcovr, pre-commit — Odysseus ADR-018)
+# - Security scanners pinned: gitleaks, trivy, actionlint
+# - check-jsonschema + yamllint + PyYAML for the workflow schema / merge-queue
+#   policy gates, and the docker CLI + compose plugin for the live-NATS test
+#   harness (test/src/test_nats_client_live.cpp shells out to `docker compose`
+#   for broker-bounce tests)
+# - Non-root user 'ci' for rootless Podman compatibility
+#
+# Build (OCI-compliant — works with both podman and docker):
+#   podman build -f ci/Containerfile -t nestor-ci:local .
+#   docker build -f ci/Containerfile -t nestor-ci:local .
+#
+# Run:
+#   podman run --rm -v .:/workspace:Z nestor-ci:local bash -c 'cmake --preset release'
+
+# ============================================================================
+# Stage 0: uv binary — installed from a pinned GitHub release so the checksum
+# is reproducible and the build resolves identically under both podman/buildah
+# and docker. (The ghcr.io astral-sh/uv image's tag scheme does not track uv
+# CLI versions, so we pin the release tarball instead.)
+# ============================================================================
+FROM ubuntu:24.04@sha256:c4a8d5503dfb2a3eb8ab5f807da5bc69a85730fb49b5cfca2330194ebcc41c7b AS uv
+
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -fsSL https://github.com/astral-sh/uv/releases/download/0.12.1/uv-x86_64-unknown-linux-gnu.tar.gz -o /tmp/uv.tar.gz \
+    && echo "90b2f223fb69d19db49e117da601f64978593417988530aa733d456141b4bcbb  /tmp/uv.tar.gz" | sha256sum --check \
+    && tar xzf /tmp/uv.tar.gz -C /usr/local/bin --strip-components=1 \
+    && rm /tmp/uv.tar.gz
+
+# ============================================================================
+# Stage 1: Runtime — full toolchain in one image
+# ============================================================================
+FROM ubuntu:24.04@sha256:c4a8d5503dfb2a3eb8ab5f807da5bc69a85730fb49b5cfca2330194ebcc41c7b
+
+LABEL org.opencontainers.image.title="nestor-ci"
+LABEL org.opencontainers.image.description="CI container for Nestor — build, lint, test, security scans"
+LABEL org.opencontainers.image.vendor="Nestor"
+LABEL org.opencontainers.image.source="https://github.com/HomericIntelligence/Nestor"
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    UV_PROJECT_ENVIRONMENT=/opt/nestor-venv \
+    UV_LINK_MODE=copy \
+    # uv manages its own Python interpreter + tool envs; keep them under /opt
+    # (not /root) so the non-root ci user can read them at runtime.
+    UV_PYTHON_INSTALL_DIR=/opt/uv-python \
+    UV_TOOL_DIR=/opt/uv-tools \
+    UV_TOOL_BIN_DIR=/usr/local/bin \
+    PATH="/opt/nestor-venv/bin:$PATH"
+
+# System packages: compiler toolchain + dev headers (mirrors the CI job apt
+# installs — same ubuntu-24.04 apt sources). docker.io + docker-compose-v2
+# provide the docker CLI that the live-NATS broker-bounce tests shell out to
+# (compose_ctl in test/src/test_nats_client_live.cpp).
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
+    build-essential \
+    git \
+    curl \
+    ca-certificates \
+    clang \
+    clang-format \
+    clang-tidy \
+    ninja-build \
+    libssl-dev \
+    python3 \
+    python3-pip \
+    jq \
+    docker.io \
+    docker-compose-v2 \
+    && rm -rf /var/lib/apt/lists/*
+
+# uv — pinned release (keep in sync with astral-sh/setup-uv in workflows)
+COPY --from=uv /usr/local/bin/uv /usr/local/bin/uvx /usr/local/bin/
+
+# Layer: Dependency files — cache layer invalidated only when deps change.
+WORKDIR /opt/nestor-build
+COPY pyproject.toml uv.lock ./
+
+# Install the locked root toolchain environment (cmake, conan, ninja, gcovr,
+# pre-commit — ADR-018). The root project is tooling-only (package = false).
+RUN uv sync --locked
+
+# actionlint — pinned release binary (workflow lint)
+RUN curl -fsSL https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz -o /tmp/actionlint.tar.gz \
+    && echo "023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757  /tmp/actionlint.tar.gz" | sha256sum --check \
+    && tar xzf /tmp/actionlint.tar.gz -C /usr/local/bin actionlint \
+    && rm /tmp/actionlint.tar.gz
+
+# gitleaks — pinned release binary (secrets scan; matches the GITLEAKS_VERSION
+# pin in the native security-secrets-scan job)
+RUN curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz -o /tmp/gitleaks.tar.gz \
+    && echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  /tmp/gitleaks.tar.gz" | sha256sum --check \
+    && tar xzf /tmp/gitleaks.tar.gz -C /usr/local/bin gitleaks \
+    && rm /tmp/gitleaks.tar.gz
+
+# trivy — pinned release binary (filesystem vuln scan)
+RUN curl -fsSL https://github.com/aquasecurity/trivy/releases/download/v0.69.3/trivy_0.69.3_Linux-64bit.tar.gz -o /tmp/trivy.tar.gz \
+    && echo "1816b632dfe529869c740c0913e36bd1629cb7688bd5634f4a858c1d57c88b75  /tmp/trivy.tar.gz" | sha256sum --check \
+    && tar xzf /tmp/trivy.tar.gz -C /usr/local/bin trivy \
+    && rm /tmp/trivy.tar.gz
+
+# check-jsonschema (workflow schema gate) + yamllint (workflow lint) as uv
+# tools so bare invocations resolve on PATH, matching CI's `pip install`.
+RUN mkdir -p /opt/uv-tools && \
+    uv tool install check-jsonschema \
+    && uv tool install yamllint \
+    && chmod -R a+rX /opt/uv-tools /opt/uv-python
+
+# PyYAML for test/test_merge_queue.py — installed into the uv venv as a locked
+# dependency of conan (uv.lock pins pyyaml 6.0.3, which the merge-queue policy
+# test asserts the schema step matches).
+# Create non-root user for rootless Podman compatibility.
+# Ubuntu 24.04 ships a default 'ubuntu' user at UID 1000 — replace it with 'ci'.
+RUN userdel -r ubuntu 2>/dev/null || true; \
+    groupadd -r ci && useradd -r -g ci -u 1000 -m -s /bin/bash ci && \
+    chown -R ci:ci /opt/nestor-venv
+
+# Working directory is the mounted repo root at runtime
+WORKDIR /workspace
+
+# No ENTRYPOINT — commands are provided externally by CI or run_ci_local.sh
+
+USER ci

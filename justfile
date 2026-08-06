@@ -66,3 +66,60 @@ asan: deps-asan
 # Build and test under ThreadSanitizer
 tsan: deps-tsan
   uv run cmake --preset tsan && uv run cmake --build --preset tsan && uv run ctest --preset tsan
+
+# --- Podman-first CI recipes (mirror .github/workflows/_required.yml) ---
+# Each recipe builds/runs the CI suite inside the nestor-ci container image
+# (ci/Containerfile) via scripts/run_ci_local.sh — podman by default, no
+# native toolchain installs.
+
+# Build the CI container image
+ci-build:
+  podman build -f ci/Containerfile -t nestor-ci:local .
+
+# clang-format + yamllint + clang-tidy debug build (lint job)
+ci-lint:
+  ./scripts/run_ci_local.sh lint
+
+# Build + labelled unit tests (unit-tests job)
+ci-unit-tests:
+  ./scripts/run_ci_local.sh unit
+
+# Build + labelled integration tests (integration-tests job)
+ci-integration-tests:
+  ./scripts/run_ci_local.sh integration
+
+# Build + 5x labelled concurrency tests (concurrency-tests job)
+ci-concurrency-tests:
+  ./scripts/run_ci_local.sh concurrency
+
+# Build + live-NATS tests against a podman broker (nats-integration-tests job)
+ci-nats-tests:
+  ./scripts/run_ci_local.sh nats
+
+# trivy fs + conan audit (security/dependency-scan job)
+ci-security:
+  ./scripts/run_ci_local.sh security
+
+# gitleaks (security/secrets-scan job)
+ci-secrets:
+  ./scripts/run_ci_local.sh secrets
+
+# Workflow schema validation + merge-queue policy tests (schema-validation job)
+ci-schema:
+  ./scripts/run_ci_local.sh schema
+
+# CMake VERSION parse check (deps/version-sync job)
+ci-deps-version-sync:
+  ./scripts/run_ci_local.sh deps-version-sync
+
+# Lockfile sync check (uv-check job)
+ci-uv-check:
+  ./scripts/run_ci_local.sh uv-check
+
+# actionlint workflow lint
+ci-actionlint:
+  ./scripts/run_ci_local.sh actionlint
+
+# Full podman-first CI suite
+ci-all:
+  ./scripts/run_ci_local.sh all
