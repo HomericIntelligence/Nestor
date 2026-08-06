@@ -53,11 +53,11 @@ jobs:
             -w /workspace nestor-ci:local \
             bash -c '
               set -euo pipefail
-              conan profile detect --exist-ok >/dev/null 2>&1
+              conan profile detect --exist-ok
               bt="$BUILD_TYPE"
               ctype=Release
               case "$bt" in debug|asan|tsan) ctype=Debug ;; esac
-              conan install . --build=missing -s build_type="$ctype" --output-folder "build/$bt" >/dev/null
+              conan install . --build=missing -s build_type="$ctype" --output-folder "build/$bt"
               if [ "$COMPILER" = "clang" ]; then
                 export CC=clang CXX=clang++
               fi

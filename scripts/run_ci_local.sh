@@ -139,8 +139,8 @@ run_lint() {
             clang-format --dry-run --Werror "${files[@]}"
         fi
         yamllint -d relaxed .github/
-        conan profile detect --exist-ok >/dev/null 2>&1
-        conan install . --build=missing -s build_type=Debug --output-folder build/debug >/dev/null
+        conan profile detect --exist-ok
+        conan install . --build=missing -s build_type=Debug --output-folder build/debug
         cmake --preset debug -DNestor_ENABLE_CLANG_TIDY=ON
         cmake --build --preset debug
         mapfile -t cpp_files < <(find src -name "*.cpp" | head -5)
@@ -164,8 +164,8 @@ run_build_release() {
     fi
     run_in_container bash -c '
         set -euo pipefail
-        conan profile detect --exist-ok >/dev/null 2>&1
-        conan install . --build=missing -s build_type=Release --output-folder build/release >/dev/null
+        conan profile detect --exist-ok
+        conan install . --build=missing -s build_type=Release --output-folder build/release
         cmake --preset release
         cmake --build --preset release
     '
@@ -213,7 +213,6 @@ run_concurrency() {
 }
 
 run_nats() {
-run_nats() {
     log_step "nats-integration-tests: build + live-NATS ctest (podman broker)"
     run_build_release
 
@@ -224,8 +223,8 @@ run_nats() {
     local broker
     broker="$("${CONTAINER_ENGINE}" run -d --name nestor-nats-test-nats-1 \
         --label com.docker.compose.project=nestor-nats-test \
-        --label com.docker.compose.project.working_dir="${PROJECT_ROOT}/test/docker" \
-        --label com.docker.compose.project.config_files=test/docker/docker-compose.nats.yml \
+        --label com.docker.compose.project.working_dir=/workspace/test/docker \
+        --label com.docker.compose.project.config_files=/workspace/test/docker/docker-compose.nats.yml \
         --label com.docker.compose.service=nats \
         --label com.docker.compose.container-number=1 \
         -p 4222:4222 \
@@ -250,16 +249,39 @@ run_nats() {
     log_info "NATS broker healthy"
 
     # The CI image's docker CLI talks to the rootless podman socket (Docker-API
-    # compatible), so the broker-bounce tests' `docker compose stop/start nats`
-    # calls control the podman broker exactly as CI controls the compose sidecar.
-    local podman_sock
+    # compatible). `docker compose stop/start nats` cannot match podman-created
+    # containers (compose v2 matching relies on labels only real compose
+    # creates), so mount a small docker shim that maps the broker-bounce
+    # lifecycle verbs to direct container control — the local equivalent of
+    # CI's real docker compose sidecar.
+    local podman_sock shim
     podman_sock="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/podman/podman.sock"
+    shim="$(mktemp)"
+    cat > "${shim}" <<'SHIM'
+#!/bin/bash
+# NATS broker compose shim (local podman runner only).
+# Maps `docker compose [-f file] stop|start nats` to direct lifecycle control
+# of the broker container via the Docker-API-compatible podman socket.
+if [ "$#" -ge 3 ] && [ "$1" = "compose" ] && [ "${@: -1}" = "nats" ]; then
+    for a in "$@"; do
+        case "$a" in
+            stop|start) verb="$a" ;;
+        esac
+    done
+    if [ -n "${verb:-}" ]; then
+        exec /usr/bin/docker "$verb" nestor-nats-test-nats-1
+    fi
+fi
+exec /usr/bin/docker "$@"
+SHIM
+    chmod 755 "${shim}"
     local status=0
     "${CONTAINER_ENGINE}" run --rm \
         --userns=keep-id \
         --network host \
         -v "${PROJECT_ROOT}:/workspace:Z" \
         -v "${podman_sock}:/var/run/docker.sock:Z" \
+        -v "${shim}:/usr/local/bin/docker:Z" \
         -e NESTOR_LIVE_NATS_URL=nats://127.0.0.1:4222 \
         -e NESTOR_LIVE_NATS_COMPOSE=/workspace/test/docker/docker-compose.nats.yml \
         -w /workspace \
@@ -269,6 +291,7 @@ run_nats() {
             cd build/release
             ctest --output-on-failure -L live-nats --no-tests=error
         ' || status=$?
+    rm -f "${shim}"
 
     "${CONTAINER_ENGINE}" rm -f "${broker}" >/dev/null 2>&1
     if [ "${status}" -ne 0 ]; then
@@ -277,14 +300,13 @@ run_nats() {
     fi
     log_info "live-NATS tests passed"
 }
-}
 
 run_security() {
     log_step "security/dependency-scan: trivy fs + conan audit"
     run_in_container bash -c '
         set -euo pipefail
         trivy fs --exit-code 0 --severity HIGH,CRITICAL --scanners vuln .
-        conan profile detect --exist-ok >/dev/null 2>&1
+        conan profile detect --exist-ok
         if [ -n "${CONAN_AUDIT_PROVIDER_TOKEN:-}" ]; then
             conan audit scan .
         else
@@ -349,7 +371,15 @@ FAILED=()
 run_step() {
     local name="$1"
     local fn="$2"
-    if ! "${fn}"; then
+    # Keep `set -e` active inside fn (fail-fast: a broken build must not let
+    # follow-on steps run and emit confusing downstream errors), but capture
+    # the exit code here so the top-level script survives to report all
+    # failures.
+    set +e
+    "${fn}"
+    local rc=$?
+    set -e
+    if [ "${rc}" -ne 0 ]; then
         FAILED+=("${name}")
         log_error "${name} FAILED"
     fi

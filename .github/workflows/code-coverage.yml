@@ -38,8 +38,8 @@ jobs:
             -w /workspace nestor-ci:local \
             bash -c '
               set -euo pipefail
-              conan profile detect --exist-ok >/dev/null 2>&1
-              conan install . --build=missing -s build_type=Debug --output-folder build/coverage >/dev/null
+              conan profile detect --exist-ok
+              conan install . --build=missing -s build_type=Debug --output-folder build/coverage
               cmake --preset coverage
               cmake --build --preset coverage
               ctest --preset coverage
