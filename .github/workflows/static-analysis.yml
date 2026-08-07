@@ -41,7 +41,7 @@ jobs:
         run: |
           mkdir -p "$HOME/.conan2"
           podman run --rm \
-            --userns=keep-id \
+            --userns=keep-id:uid=1000,gid=1000 \
             -e CONAN_HOME=/tmp/conan2 \
             -v "$PWD:/workspace:Z" \
             -v "$HOME/.conan2:/home/ci/.conan2:Z" \

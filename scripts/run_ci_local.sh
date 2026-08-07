@@ -104,7 +104,7 @@ run_in_container() {
     local engine_flags=()
 
     if [ "${CONTAINER_ENGINE}" = "podman" ]; then
-        # Bare --userns=keep-id maps the container's ci user (uid 1000) to the
+        # --userns=keep-id:uid=1000,gid=1000 maps the container's ci user (uid 1000) to the
         # invoking host user, so volume-mounted build artifacts keep the same
         # owner whether run locally or on a GitHub runner (uid 1001).
         engine_flags+=(--userns=keep-id:uid=1000,gid=1000)
@@ -289,7 +289,7 @@ SHIM
     chmod 755 "${shim}"
     local status=0
     "${CONTAINER_ENGINE}" run --rm \
-        --userns=keep-id \
+        --userns=keep-id:uid=1000,gid=1000 \
         --network host \
         -v "${PROJECT_ROOT}:/workspace:Z" \
         -v "${podman_sock}:/var/run/docker.sock:Z" \
