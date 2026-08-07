@@ -107,7 +107,7 @@ run_in_container() {
         # Bare --userns=keep-id maps the container's ci user (uid 1000) to the
         # invoking host user, so volume-mounted build artifacts keep the same
         # owner whether run locally or on a GitHub runner (uid 1001).
-        engine_flags+=(--userns=keep-id)
+        engine_flags+=(--userns=keep-id:uid=1000,gid=1000)
     fi
 
     # Conan 2 writes its global.conf + cache to $CONAN_HOME on first run. On
