@@ -110,9 +110,21 @@ run_in_container() {
         engine_flags+=(--userns=keep-id)
     fi
 
+    # Conan 2 writes its global.conf + cache to $CONAN_HOME on first run. On
+    # GitHub runners the host conan dir is owned by a different uid than the
+    # container's mapped user, so pointing CONAN_HOME at a container-local
+    # path (/tmp) is always writable. The optional host mount below still
+    # provides a cold-cache speedup when the host dir happens to be writable.
+    engine_flags+=(-e CONAN_HOME=/tmp/conan2)
     if [ -n "${CONAN_HOME_HOST:-}" ]; then
         engine_flags+=(-v "${CONAN_HOME_HOST}:/home/ci/.conan2:Z")
     fi
+    # /workspace is a bind mount whose git metadata is owned by the host user;
+    # mark it safe so `git` commands inside the container (merge-queue policy
+    # tests, schema drift checks) do not fail with "dubious ownership".
+    engine_flags+=(-e GIT_CONFIG_COUNT=1)
+    engine_flags+=(-e GIT_CONFIG_KEY_0=safe.directory)
+    engine_flags+=(-e GIT_CONFIG_VALUE_0=/workspace)
 
     if [ -n "${CONAN_AUDIT_PROVIDER_TOKEN:-}" ]; then
         engine_flags+=(-e CONAN_AUDIT_PROVIDER_TOKEN="${CONAN_AUDIT_PROVIDER_TOKEN}")
