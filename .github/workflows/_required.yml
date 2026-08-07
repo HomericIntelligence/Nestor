@@ -280,6 +280,7 @@ jobs:
           sudo chmod 0666 /var/run/docker.sock
           podman run --rm \
             --userns=keep-id \
+            -e CONAN_HOME=/tmp/conan2 \
             --network host \
             -v "$PWD:/workspace:Z" \
             -v "$HOME/.conan2:/home/ci/.conan2:Z" \

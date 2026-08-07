@@ -48,6 +48,7 @@ jobs:
           mkdir -p "$HOME/.conan2"
           podman run --rm \
             --userns=keep-id \
+            -e CONAN_HOME=/tmp/conan2 \
             -v "$PWD:/workspace:Z" \
             -v "$HOME/.conan2:/home/ci/.conan2:Z" \
             -w /workspace nestor-ci:local \
