@@ -49,6 +49,8 @@ jobs:
           podman run --rm \
             --userns=keep-id:uid=1000,gid=1000 \
             -e CONAN_HOME=/tmp/conan2 \
+            -e COMPILER="${COMPILER}" \
+            -e BUILD_TYPE="${BUILD_TYPE}" \
             -v "$PWD:/workspace:Z" \
             -v "$HOME/.conan2:/home/ci/.conan2:Z" \
             -w /workspace nestor-ci:local \
