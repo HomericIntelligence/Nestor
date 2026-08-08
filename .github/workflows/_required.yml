@@ -270,7 +270,7 @@ jobs:
       - name: Run live-broker NATS tests (in container)
         env:
           NESTOR_LIVE_NATS_URL: nats://127.0.0.1:4222
-          NESTOR_LIVE_NATS_COMPOSE: ${{ github.workspace }}/test/docker/docker-compose.nats.yml
+          NESTOR_LIVE_NATS_COMPOSE: /workspace/test/docker/docker-compose.nats.yml
         run: |
           set -euo pipefail
           mkdir -p "$HOME/.conan2"
