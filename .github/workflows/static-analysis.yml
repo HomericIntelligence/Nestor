@@ -22,16 +22,37 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
-      - name: Install dependencies
-        run: sudo apt-get install -y ninja-build clang clang-tidy
-      - name: Conan install (Debug)
-        uses: ./.github/actions/conan-install
+
+      - name: Cache podman container storage
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
-          build-type: Debug
-      - name: Configure
-        run: cmake --preset debug -DNestor_ENABLE_CLANG_TIDY=ON
-      - name: Build
-        run: cmake --build --preset debug
+          path: ~/.local/share/containers/storage
+          key: podman-nestor-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+          restore-keys: |
+            podman-nestor-${{ runner.os }}-
+
+      - name: Build CI image (podman)
+        run: podman build -f ci/Containerfile -t nestor-ci:local .
+
+      # Debug build with clang-tidy enabled, inside the CI container
+      # (clang-tidy comes from apt in the image, not the uv toolchain —
+      # ADR-018: no maintained self-contained PyPI wheel).
+      - name: Configure + build with clang-tidy (in container)
+        run: |
+          mkdir -p "$HOME/.conan2"
+          podman run --rm \
+            --userns=keep-id:uid=1000,gid=1000 \
+            -e CONAN_HOME=/tmp/conan2 \
+            -v "$PWD:/workspace:Z" \
+            -v "$HOME/.conan2:/home/ci/.conan2:Z" \
+            -w /workspace nestor-ci:local \
+            bash -c '
+              set -euo pipefail
+              conan profile detect --exist-ok >/dev/null 2>&1
+              conan install . --build=missing -s build_type=Debug --output-folder build/debug >/dev/null
+              cmake --preset debug -DNestor_ENABLE_CLANG_TIDY=ON
+              cmake --build --preset debug
+            '
 
   check-all:
     name: All Static Analysis Checks

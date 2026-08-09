@@ -427,7 +427,9 @@ class MergeQueueReadinessTests(unittest.TestCase):
         self.assertEqual(len(locked_versions), 1)
         locked_version = locked_versions.pop()
         self.assertIn(f"PyYAML=={locked_version}", schema_step["run"])
-        self.assertEqual(step["run"], "python3 test/test_merge_queue.py")
+        # Podman-first: the regression suite runs inside the CI container.
+        self.assertIn("python3 test/test_merge_queue.py", step["run"])
+        self.assertIn("nestor-ci:local", step["run"])
 
     def test_governance_relative_links_resolve(self) -> None:
         for document in GOVERNANCE_DOCS:

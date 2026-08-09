@@ -12,40 +12,49 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
-      - name: Install dependencies
+
+      - name: Cache podman container storage
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/.local/share/containers/storage
+          key: podman-nestor-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+          restore-keys: |
+            podman-nestor-${{ runner.os }}-
+
+      - name: Build CI image (podman)
+        run: podman build -f ci/Containerfile -t nestor-ci:local .
+
+      # Coverage build + report inside the CI container. gcovr comes from the
+      # locked uv toolchain (uv.lock pins gcovr 8.6 — the LCOV_EXCL_* marker
+      # placement in src/nats_client.cpp was verified against this exact
+      # version; the root toolchain resolves it identically).
+      - name: Coverage build + report (in container)
         run: |
-          sudo apt-get install -y ninja-build
-          # gcovr pinned via pip: the LCOV_EXCL_* marker placement in
-          # src/nats_client.cpp was verified against this exact version.
-          pip install conan 'gcovr==8.6'
-          conan profile detect --force
-      - name: Install Conan dependencies
-        run: |
-          conan install . --build=missing -s build_type=Debug \
-            --output-folder build/coverage
-      - name: Configure
-        run: cmake --preset coverage
-      - name: Build
-        run: cmake --build --preset coverage
-      - name: Test
-        run: ctest --preset coverage
-      - name: Generate coverage report
-        run: ./scripts/coverage.sh
-      - name: Check threshold
-        # gcovr has a first-class --fail-under-line flag; the previous
-        # grep + python pipeline broke whenever gcovr changed its summary
-        # wording or when the regex tripped over locale-formatted floats.
-        run: |
-          set -euo pipefail
-          gcovr \
-            --root . \
-            --filter include \
-            --filter src \
-            --exclude src/server_main.cpp \
-            --gcov-ignore-parse-errors=negative_hits.warn \
-            --print-summary \
-            --fail-under-line 80 \
-            build/coverage
+          mkdir -p "$HOME/.conan2"
+          podman run --rm \
+            --userns=keep-id:uid=1000,gid=1000 \
+            -e CONAN_HOME=/tmp/conan2 \
+            -v "$PWD:/workspace:Z" \
+            -v "$HOME/.conan2:/home/ci/.conan2:Z" \
+            -w /workspace nestor-ci:local \
+            bash -c '
+              set -euo pipefail
+              conan profile detect --exist-ok
+              conan install . --build=missing -s build_type=Debug --output-folder build/coverage
+              cmake --preset coverage
+              cmake --build --preset coverage
+              ctest --preset coverage
+              ./scripts/coverage.sh
+              gcovr \
+                --root . \
+                --filter include \
+                --filter src \
+                --exclude src/server_main.cpp \
+                --gcov-ignore-parse-errors=negative_hits.warn \
+                --print-summary \
+                --fail-under-line 80 \
+                build/coverage
+            '
 
   check-all:
     name: All Coverage Checks

@@ -25,35 +25,49 @@ jobs:
             build_type: tsan
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build
-          if [ "${{ matrix.compiler }}" = "clang" ]; then
-            sudo apt-get install -y clang
-          fi
-      - name: Conan install
-        uses: ./.github/actions/conan-install
+
+      - name: Cache podman container storage
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
-          build-type: ${{ matrix.build_type == 'release' && 'Release' || 'Debug' }}
-          output-subdir: ${{ matrix.build_type }}
-      - name: Configure
+          path: ~/.local/share/containers/storage
+          key: podman-nestor-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+          restore-keys: |
+            podman-nestor-${{ runner.os }}-
+
+      - name: Build CI image (podman)
+        run: podman build -f ci/Containerfile -t nestor-ci:local .
+
+      # Every matrix cell (gcc/clang x debug/release/asan/tsan) configures,
+      # builds, and tests inside the CI container. The compiler is selected via
+      # CC/CXX, mirroring the previous native matrix job.
+      - name: Configure, build, test (in container)
         env:
           COMPILER: ${{ matrix.compiler }}
           BUILD_TYPE: ${{ matrix.build_type }}
         run: |
-          if [ "$COMPILER" = "clang" ]; then
-            export CC=clang CXX=clang++
-          fi
-          cmake --preset "$BUILD_TYPE"
-      - name: Build
-        env:
-          BUILD_TYPE: ${{ matrix.build_type }}
-        run: cmake --build --preset "$BUILD_TYPE"
-      - name: Test
-        env:
-          BUILD_TYPE: ${{ matrix.build_type }}
-        run: ctest --preset "$BUILD_TYPE"
+          mkdir -p "$HOME/.conan2"
+          podman run --rm \
+            --userns=keep-id:uid=1000,gid=1000 \
+            -e CONAN_HOME=/tmp/conan2 \
+            -e COMPILER="${COMPILER}" \
+            -e BUILD_TYPE="${BUILD_TYPE}" \
+            -v "$PWD:/workspace:Z" \
+            -v "$HOME/.conan2:/home/ci/.conan2:Z" \
+            -w /workspace nestor-ci:local \
+            bash -c '
+              set -euo pipefail
+              conan profile detect --exist-ok
+              bt="$BUILD_TYPE"
+              ctype=Release
+              case "$bt" in debug|asan|tsan) ctype=Debug ;; esac
+              conan install . --build=missing -s build_type="$ctype" --output-folder "build/$bt"
+              if [ "$COMPILER" = "clang" ]; then
+                export CC=clang CXX=clang++
+              fi
+              cmake --preset "$bt"
+              cmake --build --preset "$bt"
+              ctest --preset "$bt"
+            '
 
   check-all:
     name: All Build/Test Checks

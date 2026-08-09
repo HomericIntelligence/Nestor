@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # merge_group is intentionally absent: the merge queue runs the fast
+  # merge-queue-smoke.yml workflow instead (single merge-queue-smoke job,
+  # <5 min). Re-running every job here per queue entry starved the runner pool
+  # and pushed queue merges to 70-90 min.
 
 concurrency:
   group: required-${{ github.ref }}
@@ -107,166 +111,193 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
-      - name: Install clang-format
-        # Ensure clang-format is present so the check below cannot silently
-        # bypass enforcement when the tool is missing — see #32.
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang-format
-      - name: clang-format check
-        run: |
-          set -euo pipefail
-          mapfile -t files < <(find src include -type f \( -name "*.cpp" -o -name "*.hpp" \))
-          if [ "${#files[@]}" -eq 0 ]; then
-            echo "No C++ sources to format-check"
-            exit 0
-          fi
-          clang-format --dry-run --Werror "${files[@]}"
-      - name: yamllint
-        run: pip install yamllint && yamllint -d relaxed .github/
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build clang clang-tidy
-      - name: Conan install (Debug)
-        uses: ./.github/actions/conan-install
+      - name: Restore Conan cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
-          build-type: Debug
-      - name: Configure with clang-tidy
-        run: cmake --preset debug -DNestor_ENABLE_CLANG_TIDY=ON
-      - name: clang-tidy check
-        # clang-tidy comes from apt (installed above), not from the uv build
-        # toolchain (ADR-018): it has no maintained self-contained PyPI wheel.
+          path: ~/.conan2
+          key: conan-${{ runner.os }}-debug-${{ hashFiles('conanfile.py') }}
+          restore-keys: |
+            conan-${{ runner.os }}-debug-
+            conan-${{ runner.os }}-
+
+      - name: Cache podman container storage
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/.local/share/containers/storage
+          key: podman-nestor-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+          restore-keys: |
+            podman-nestor-${{ runner.os }}-
+
+      - name: Build CI image (podman)
+        run: podman build -f ci/Containerfile -t nestor-ci:local .
+
+      # Runs clang-format, yamllint, and the clang-tidy debug build inside the
+      # CI container with the workspace + conan cache mounted.
+      - name: Lint (in container)
         run: |
-          set -euo pipefail
-          mapfile -t cpp_files < <(find src -name "*.cpp" | head -5)
-          if [ "${#cpp_files[@]}" -gt 0 ]; then
-            # build/debug/compile_commands.json comes from the GCC build and
-            # contains GCC-only warning flags (-Wduplicated-branches,
-            # -Wduplicated-cond, -Wlogical-op, -Wuseless-cast). Tell clang to
-            # treat unknown warning options as warnings, not as
-            # clang-diagnostic-unknown-warning-option errors.
-            clang-tidy -p build/debug \
-              --extra-arg-before=-Wno-unknown-warning-option \
-              "${cpp_files[@]}"
-          else
-            echo "WARN: no src/*.cpp files found to clang-tidy"
-          fi
+          mkdir -p "$HOME/.conan2"
+          CONAN_HOME_HOST="$HOME/.conan2" bash scripts/run_ci_local.sh lint
 
   unit-tests:
     name: unit-tests
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build
-      - name: Conan install (Release)
-        uses: ./.github/actions/conan-install
+
+      - name: Restore Conan cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
-          build-type: Release
-      - name: Configure
-        run: cmake --preset release
-      - name: Build
-        run: cmake --build --preset release
-      - name: Run unit tests
+          path: ~/.conan2
+          key: conan-${{ runner.os }}-release-${{ hashFiles('conanfile.py') }}
+          restore-keys: |
+            conan-${{ runner.os }}-release-
+            conan-${{ runner.os }}-
+
+      - name: Cache podman container storage
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/.local/share/containers/storage
+          key: podman-nestor-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+          restore-keys: |
+            podman-nestor-${{ runner.os }}-
+
+      - name: Build CI image (podman)
+        run: podman build -f ci/Containerfile -t nestor-ci:local .
+
+      - name: Build + run unit tests (in container)
         run: |
-          cd build/release
-          if ctest --output-on-failure -L unit 2>/dev/null; then
-            echo "Unit tests (labelled) passed"
-          else
-            ctest --output-on-failure
-          fi
+          mkdir -p "$HOME/.conan2"
+          CONAN_HOME_HOST="$HOME/.conan2" bash scripts/run_ci_local.sh unit
 
   integration-tests:
     name: integration-tests
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build
-      - name: Conan install (Release)
-        uses: ./.github/actions/conan-install
+
+      - name: Restore Conan cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
-          build-type: Release
-      - name: Configure
-        run: cmake --preset release
-      - name: Build
-        run: cmake --build --preset release
-      - name: Run integration tests
+          path: ~/.conan2
+          key: conan-${{ runner.os }}-release-${{ hashFiles('conanfile.py') }}
+          restore-keys: |
+            conan-${{ runner.os }}-release-
+            conan-${{ runner.os }}-
+
+      - name: Cache podman container storage
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/.local/share/containers/storage
+          key: podman-nestor-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+          restore-keys: |
+            podman-nestor-${{ runner.os }}-
+
+      - name: Build CI image (podman)
+        run: podman build -f ci/Containerfile -t nestor-ci:local .
+
+      - name: Build + run integration tests (in container)
         run: |
-          cd build/release
-          if ctest --output-on-failure -L integration 2>/dev/null; then
-            echo "Integration tests (labelled) passed"
-          else
-            ctest --output-on-failure
-          fi
+          mkdir -p "$HOME/.conan2"
+          CONAN_HOME_HOST="$HOME/.conan2" bash scripts/run_ci_local.sh integration
 
   concurrency-tests:
     name: concurrency-tests
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build
-      - name: Conan install (Release)
-        uses: ./.github/actions/conan-install
+
+      - name: Restore Conan cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
-          build-type: Release
-      - name: Configure
-        run: cmake --preset release
-      - name: Build
-        run: cmake --build --preset release
-      - name: Run concurrency tests
-        # StoreConcurrencyTest suite validates Store locking under contention.
-        # These tests assert only at quiescence (all threads joined) to tolerate
-        # the known submit_research pending_ asymmetry (see issue #93).
-        # Run 5 consecutive repetitions to surface flaky locking bugs.
+          path: ~/.conan2
+          key: conan-${{ runner.os }}-release-${{ hashFiles('conanfile.py') }}
+          restore-keys: |
+            conan-${{ runner.os }}-release-
+            conan-${{ runner.os }}-
+
+      - name: Cache podman container storage
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/.local/share/containers/storage
+          key: podman-nestor-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+          restore-keys: |
+            podman-nestor-${{ runner.os }}-
+
+      - name: Build CI image (podman)
+        run: podman build -f ci/Containerfile -t nestor-ci:local .
+
+      - name: Build + run concurrency tests (in container)
         run: |
-          set -euo pipefail
-          for i in $(seq 5); do
-            echo "--- concurrency run $i/5 ---"
-            cd build/release && ctest --output-on-failure -L concurrency
-            cd ../..
-          done
+          mkdir -p "$HOME/.conan2"
+          CONAN_HOME_HOST="$HOME/.conan2" bash scripts/run_ci_local.sh concurrency
 
   nats-integration-tests:
     name: nats-integration-tests
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build
-      - name: Conan install (Release)
-        uses: ./.github/actions/conan-install
+
+      - name: Restore Conan cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
-          build-type: Release
-      - name: Configure
-        run: cmake --preset release
-      - name: Build
-        run: cmake --build --preset release
+          path: ~/.conan2
+          key: conan-${{ runner.os }}-release-${{ hashFiles('conanfile.py') }}
+          restore-keys: |
+            conan-${{ runner.os }}-release-
+            conan-${{ runner.os }}-
+
+      - name: Cache podman container storage
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/.local/share/containers/storage
+          key: podman-nestor-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+          restore-keys: |
+            podman-nestor-${{ runner.os }}-
+
+      - name: Build CI image (podman)
+        run: podman build -f ci/Containerfile -t nestor-ci:local .
+
+      # The live-broker harness (test/src/test_nats_client_live.cpp) shells out
+      # to `docker compose` for the broker-bounce tests (compose_ctl), so this
+      # job is the one exception to pure-podman execution: the broker stays a
+      # docker compose sidecar (started on the runner, exactly as before) and
+      # the docker CLI + socket are mounted into the CI container so the tests
+      # can control it. The build/test toolchain itself runs in the container.
       - name: Start NATS broker (JetStream)
         run: docker compose -f test/docker/docker-compose.nats.yml up -d --wait
-      - name: Run live-broker NATS tests
-        # Separate from the unit coverage gate (issue #119): exercises the
-        # LCOV-excluded live-broker regions of src/nats_client.cpp against a
-        # real NATS+JetStream broker. With NESTOR_LIVE_NATS_URL set, an
-        # unreachable broker is a hard test failure — no silent pass.
-        # --no-tests=error: a label typo must fail the job, not pass silently.
+
+      - name: Run live-broker NATS tests (in container)
         env:
           NESTOR_LIVE_NATS_URL: nats://127.0.0.1:4222
-          NESTOR_LIVE_NATS_COMPOSE: ${{ github.workspace }}/test/docker/docker-compose.nats.yml
+          NESTOR_LIVE_NATS_COMPOSE: /workspace/test/docker/docker-compose.nats.yml
         run: |
-          cd build/release
-          ctest --output-on-failure -L live-nats --no-tests=error
+          set -euo pipefail
+          mkdir -p "$HOME/.conan2"
+          # Any container uid must be able to drive the docker CLI via the
+          # mounted socket (the runner's docker group membership does not map
+          # into the container user namespace).
+          sudo chmod 0666 /var/run/docker.sock
+          podman run --rm \
+            --userns=keep-id:uid=1000,gid=1000 \
+            -e CONAN_HOME=/tmp/conan2 \
+            --network host \
+            -v "$PWD:/workspace:Z" \
+            -v "$HOME/.conan2:/home/ci/.conan2:Z" \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -e NESTOR_LIVE_NATS_URL \
+            -e NESTOR_LIVE_NATS_COMPOSE \
+            -w /workspace nestor-ci:local \
+            bash -c '
+              set -euo pipefail
+              conan profile detect --exist-ok >/dev/null 2>&1
+              conan install . --build=missing -s build_type=Release --output-folder build/release >/dev/null
+              cmake --preset release
+              cmake --build --preset release
+              cd build/release
+              ctest --output-on-failure -L live-nats --no-tests=error
+            '
+
       - name: Stop NATS broker
         if: always()
         run: docker compose -f test/docker/docker-compose.nats.yml down -v
@@ -307,35 +338,26 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
-      - name: Trivy filesystem scan
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+
+      - name: Cache podman container storage
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
-          scan-type: fs
-          scan-ref: .
-          exit-code: 0
-      - name: Setup uv
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78  # v7.6.0
-        with:
-          enable-cache: true
-      - name: Sync build toolchain (uv)
-        # uv provides conan (and the rest of the C++ build toolchain) as locked
-        # PyPI wheels per Odysseus ADR-018 — replaces the former `pip install conan`.
-        run: uv sync --locked
-      - name: Conan audit
-        run: |
-          set -euo pipefail
-          # Detect a default profile so conan can resolve the graph, then audit
-          # the dependency tree for known CVEs. `conan audit` requires a
-          # provider token (CONAN_AUDIT_PROVIDER_TOKEN); when absent we emit an
-          # informational note instead of failing the security gate.
-          uv run conan profile detect --exist-ok
-          if [ -n "${CONAN_AUDIT_PROVIDER_TOKEN:-}" ]; then
-            uv run conan audit scan .
-          else
-            echo "WARN: CONAN_AUDIT_PROVIDER_TOKEN unset — skipping conan audit scan"
-          fi
+          path: ~/.local/share/containers/storage
+          key: podman-nestor-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+          restore-keys: |
+            podman-nestor-${{ runner.os }}-
+
+      - name: Build CI image (podman)
+        run: podman build -f ci/Containerfile -t nestor-ci:local .
+
+      # Trivy filesystem scan + conan audit, all inside the CI container.
+      # Trivy is pinned in ci/Containerfile; conan comes from the locked uv
+      # toolchain. The audit provider token is passed through when present.
+      - name: Dependency + audit scans (in container)
         env:
           CONAN_AUDIT_PROVIDER_TOKEN: ${{ secrets.CONAN_AUDIT_PROVIDER_TOKEN }}
+        run: |
+          bash scripts/run_ci_local.sh security
 
   security-secrets-scan:
     name: security/secrets-scan
@@ -344,26 +366,23 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
         with:
           fetch-depth: 0
-      - name: Install Gitleaks
-        run: |
-          GITLEAKS_VERSION=8.30.1
-          OS=$(uname -s | tr '[:upper:]' '[:lower:]')
-          ARCH=$(uname -m | sed 's/x86_64/x64/;s/aarch64/arm64/')
-          curl -sSfL \
-            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_${OS}_${ARCH}.tar.gz" \
-            | tar -xz -C /usr/local/bin gitleaks
-          gitleaks version
 
-      - name: Run Gitleaks
+      - name: Cache podman container storage
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/.local/share/containers/storage
+          key: podman-nestor-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+          restore-keys: |
+            podman-nestor-${{ runner.os }}-
+
+      - name: Build CI image (podman)
+        run: podman build -f ci/Containerfile -t nestor-ci:local .
+
+      # Gitleaks is pinned in ci/Containerfile (v8.30.1 — same version the
+      # native job downloaded); enforcement is strict (--exit-code 1).
+      - name: Run Gitleaks (in container)
         run: |
-          set -euo pipefail
-          if [ -f .gitleaks.toml ]; then
-            gitleaks detect --source . --config .gitleaks.toml \
-              --report-format sarif --report-path gitleaks.sarif --exit-code 0
-          else
-            gitleaks detect --source . \
-              --report-format sarif --report-path gitleaks.sarif --exit-code 0
-          fi
+          bash scripts/run_ci_local.sh secrets
 
       - name: Upload Gitleaks SARIF
         if: always() && hashFiles('gitleaks.sarif') != ''
@@ -378,53 +397,93 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build
-      - name: Conan install (Release)
-        uses: ./.github/actions/conan-install
+
+      - name: Restore Conan cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
-          build-type: Release
-      - name: Configure with CMake
-        run: cmake --preset release
-      - name: Build
-        run: cmake --build --preset release
+          path: ~/.conan2
+          key: conan-${{ runner.os }}-release-${{ hashFiles('conanfile.py') }}
+          restore-keys: |
+            conan-${{ runner.os }}-release-
+            conan-${{ runner.os }}-
+
+      - name: Cache podman container storage
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/.local/share/containers/storage
+          key: podman-nestor-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+          restore-keys: |
+            podman-nestor-${{ runner.os }}-
+
+      - name: Build CI image (podman)
+        run: podman build -f ci/Containerfile -t nestor-ci:local .
+
+      - name: Configure + build (in container)
+        run: |
+          mkdir -p "$HOME/.conan2"
+          CONAN_HOME_HOST="$HOME/.conan2" bash scripts/run_ci_local.sh build
 
   schema-validation:
     name: schema-validation
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+
+      - name: Cache podman container storage
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/.local/share/containers/storage
+          key: podman-nestor-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+          restore-keys: |
+            podman-nestor-${{ runner.os }}-
+
+      - name: Build CI image (podman)
+        run: podman build -f ci/Containerfile -t nestor-ci:local .
+
+      # Use the network-free vendored schema. The previous schemastore.org
+      # fetch was wrapped in an advisory `::warning::` to tolerate outages —
+      # that masked real schema violations. The vendored schema bundled with
+      # check-jsonschema has no network dependency and fails fast on
+      # genuine schema errors. See docs/runbooks/no-silent-failures.md (Bucket F).
       - name: Validate workflow schemas
-        # Use the network-free vendored schema. The previous schemastore.org
-        # fetch was wrapped in an advisory `::warning::` to tolerate outages —
-        # that masked real schema violations. The vendored schema bundled with
-        # check-jsonschema has no network dependency and fails fast on
-        # genuine schema errors. See docs/runbooks/no-silent-failures.md (Bucket F).
         run: |
-          set -euo pipefail
-          # Keep PyYAML aligned with the version resolved in uv.lock; the
-          # merge-queue policy tests must not float independently in CI.
-          pip install check-jsonschema PyYAML==6.0.3
-          find .github/workflows -name "*.yml" | \
-            xargs check-jsonschema --builtin-schema vendor.github-workflows
+          # check-jsonschema and yamllint are baked into the CI image
+          # (ci/Containerfile); PyYAML==6.0.3 is installed in the uv venv as a
+          # locked conan dependency — the merge-queue policy tests assert the
+          # PyYAML==6.0.3 pin, and they must not float independently in CI.
+          podman run --rm --userns=keep-id:uid=1000,gid=1000 \
+            -v "$PWD:/workspace:Z" -w /workspace nestor-ci:local \
+            bash -c '
+              set -euo pipefail
+              find .github/workflows -name "*.yml" | \
+                xargs check-jsonschema --builtin-schema vendor.github-workflows
+            '
       - name: Test merge-queue readiness
-        run: python3 test/test_merge_queue.py
+        run: |
+          podman run --rm --userns=keep-id:uid=1000,gid=1000 \
+            -v "$PWD:/workspace:Z" -w /workspace nestor-ci:local \
+            python3 test/test_merge_queue.py
 
   deps-version-sync:
     name: deps/version-sync
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
-      - name: Check CMake version parseable
+
+      - name: Cache podman container storage
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/.local/share/containers/storage
+          key: podman-nestor-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+          restore-keys: |
+            podman-nestor-${{ runner.os }}-
+
+      - name: Build CI image (podman)
+        run: podman build -f ci/Containerfile -t nestor-ci:local .
+
+      - name: Check CMake version parseable (in container)
         run: |
-          python3 -c "
-          import re
-          cmake = open('CMakeLists.txt').read()
-          v = re.search(r'VERSION\s+(\S+)', cmake).group(1)
-          print(f'CMake version: {v}')
-          "
+          bash scripts/run_ci_local.sh deps-version-sync
 
   markdownlint:
     name: markdownlint
@@ -450,20 +509,24 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-      - name: Setup uv
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78  # v7.6.0
+
+      - name: Cache podman container storage
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
-          enable-cache: true
+          path: ~/.local/share/containers/storage
+          key: podman-nestor-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+          restore-keys: |
+            podman-nestor-${{ runner.os }}-
+
+      - name: Build CI image (podman)
+        run: podman build -f ci/Containerfile -t nestor-ci:local .
+
       # Assert the committed uv.lock is in sync with pyproject.toml (ADR-018:
       # uv replaces pixi). `uv lock --check` fails if the lockfile would change,
-      # i.e. it was not regenerated after a manifest edit — the uv equivalent of
-      # the former `pixi install --locked` gate.
-      - name: Check build-toolchain lock
-        run: uv lock --check
-      # `uv sync --locked` proves the pinned wheels (cmake/ninja/conan/gcovr/
-      # pre-commit) actually resolve and install from the committed lock.
-      - name: Install build toolchain (locked)
-        run: uv sync --locked
+      # i.e. it was not regenerated after a manifest edit.
+      - name: Check build-toolchain lock (in container)
+        run: |
+          bash scripts/run_ci_local.sh uv-check
 
   justfile-check:
     name: justfile-check
