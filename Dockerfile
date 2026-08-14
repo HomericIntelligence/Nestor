@@ -5,7 +5,7 @@
 # with that name", so we alias the digest-pinned image to a stage name here and
 # COPY from the alias. Keep this pin in sync with astral-sh/setup-uv in
 # .github/workflows/*.yml when bumping.
-FROM ghcr.io/astral-sh/uv:0.11.21@sha256:ff07b86af50d4d9391d9daf4ff89ce427bc544f9aae87057e69a1cc0aa369946 AS uv
+FROM ghcr.io/astral-sh/uv:0.12.2@sha256:069a51314a7bb6031777a9273205fe1b0b19e914ef418207d1338b268df641dd AS uv
 
 # ── Builder ───────────────────────────────────────────────────────────────────
 FROM ubuntu@sha256:678c6550cc43645e08669028bc177f50be4e7c5b8cca677067b1914d4afc7a03 AS builder
