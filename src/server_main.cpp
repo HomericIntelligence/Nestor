@@ -174,8 +174,8 @@ int main() {
   // never holds a stack address (CodeQL cpp/stack-address-escape). The heap
   // object outlives listen(); main() returns only after listen() returns.
   if (tls->enabled) {
-    auto server = std::make_unique<httplib::SSLServer>(tls->cert_path.c_str(),
-                                                       tls->key_path.c_str());
+    auto server =
+        std::make_unique<httplib::SSLServer>(tls->cert_path.c_str(), tls->key_path.c_str());
     if (!server->is_valid()) {
       std::cerr << "[main] TLS server init failed; check cert/key paths.\n";
       return 1;
