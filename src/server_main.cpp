@@ -14,6 +14,7 @@
 #include <cstdlib>
 #include <exception>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <unistd.h>
 
@@ -169,46 +170,50 @@ int main() {
   nestor::RateLimiter limiter{rl_cfg};
 
   // ── Server instantiation (TLS branch) ────────────────────────────────────
+  // The server is heap-allocated so the signal trampoline's g_server pointer
+  // never holds a stack address (CodeQL cpp/stack-address-escape). The heap
+  // object outlives listen(); main() returns only after listen() returns.
   if (tls->enabled) {
-    httplib::SSLServer server(tls->cert_path.c_str(), tls->key_path.c_str());
-    if (!server.is_valid()) {
+    auto server = std::make_unique<httplib::SSLServer>(tls->cert_path.c_str(),
+                                                       tls->key_path.c_str());
+    if (!server->is_valid()) {
       std::cerr << "[main] TLS server init failed; check cert/key paths.\n";
       return 1;
     }
     // Upcast: g_server is httplib::Server* — stop() is safe through base ptr.
-    g_server = &server;
+    g_server = server.get();
 
-    server.set_payload_max_length(1 * 1024 * 1024);  // 1 MiB
-    server.set_read_timeout(5, 0);
-    server.set_write_timeout(5, 0);
+    server->set_payload_max_length(1 * 1024 * 1024);  // 1 MiB
+    server->set_read_timeout(5, 0);
+    server->set_write_timeout(5, 0);
 
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
 
-    nestor::install_auth_middleware(server, *auth_cfg);
-    nestor::register_routes(server, store, nats, limiter);
+    nestor::install_auth_middleware(*server, *auth_cfg);
+    nestor::register_routes(*server, store, nats, limiter);
 
     std::cout << "Routes registered. Listening...\n";
-    if (!server.listen(host, port)) {
+    if (!server->listen(host, port)) {
       std::cerr << "Failed to start server on port " << port << "\n";
       return 1;
     }
   } else {
-    httplib::Server server;
-    g_server = &server;
+    auto server = std::make_unique<httplib::Server>();
+    g_server = server.get();
 
-    server.set_payload_max_length(1 * 1024 * 1024);  // 1 MiB
-    server.set_read_timeout(5, 0);
-    server.set_write_timeout(5, 0);
+    server->set_payload_max_length(1 * 1024 * 1024);  // 1 MiB
+    server->set_read_timeout(5, 0);
+    server->set_write_timeout(5, 0);
 
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
 
-    nestor::install_auth_middleware(server, *auth_cfg);
-    nestor::register_routes(server, store, nats, limiter);
+    nestor::install_auth_middleware(*server, *auth_cfg);
+    nestor::register_routes(*server, store, nats, limiter);
 
     std::cout << "Routes registered. Listening...\n";
-    if (!server.listen(host, port)) {
+    if (!server->listen(host, port)) {
       std::cerr << "Failed to start server on port " << port << "\n";
       return 1;
     }
