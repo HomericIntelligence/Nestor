@@ -13,3 +13,4 @@ name: "Nestor CodeQL config"
 paths-ignore:
   - build/**
   - "**/_deps/**"
+  - test/src/test_sanitizers.cpp  # deliberate ASAN/TSAN proof file — CodeQL analysis of it is noise
