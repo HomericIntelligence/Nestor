@@ -317,7 +317,7 @@ run_security() {
     log_step "security/dependency-scan: trivy fs + conan audit"
     run_in_container bash -c '
         set -euo pipefail
-        trivy fs --exit-code 0 --severity HIGH,CRITICAL --scanners vuln .
+        trivy fs --exit-code 0 --severity HIGH,CRITICAL --scanners vuln --skip-dirs build .
         conan profile detect --exist-ok
         if [ -n "${CONAN_AUDIT_PROVIDER_TOKEN:-}" ]; then
             conan audit scan .

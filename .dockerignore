@@ -1,0 +1,9 @@
+# Build output + vendored dependencies never enter the CI image context.
+build/
+**/build/
+.git/
+.pixi/
+__pycache__/
+*.pyc
+.coverage
+htmlcov/

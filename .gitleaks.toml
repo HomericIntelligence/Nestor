@@ -1,0 +1,15 @@
+# Nestor gitleaks configuration.
+# The secrets scan runs on the raw working tree (gitleaks does not honor
+# .gitignore), so exclude generated build output and vendored dependencies —
+# they are third-party code fetched by Conan/CMake, not first-party source.
+title = "Nestor gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Exclude build output and vendored dependency trees"
+paths = [
+  '''build/.*''',
+  '''.*/_deps/.*''',
+]
