@@ -20,3 +20,5 @@ MD041: false
 
 MD046:
   style: fenced
+
+MD060: false  # Prose tables with long descriptions use unaligned pipes
