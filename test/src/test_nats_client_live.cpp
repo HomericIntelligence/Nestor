@@ -25,7 +25,9 @@
 #include <mutex>
 #include <random>
 #include <string>
+#include <sys/wait.h>
 #include <thread>
+#include <unistd.h>
 #include <utility>
 #include <vector>
 
@@ -57,12 +59,29 @@ const char* compose_file() {
 }  // NOLINT(concurrency-mt-unsafe)
 
 // Run a docker-compose lifecycle command against the test broker.
-// std::system is acceptable here: test-only helper, arguments are
-// build-controlled env values, never user input.
+// Execs docker directly (no shell), so the env-supplied compose path is passed
+// as an argv element and cannot inject shell syntax (CodeQL
+// cpp/command-line-injection). Test-only helper; the compose file is
+// build-controlled env config, never user input.
 bool compose_ctl(const std::string& verb) {
-  const std::string cmd =
-      "docker compose -f \"" + std::string(compose_file()) + "\" " + verb + " nats";
-  return std::system(cmd.c_str()) == 0;  // NOLINT(cert-env33-c,concurrency-mt-unsafe)
+  const char* file = compose_file();
+  if (file == nullptr || file[0] == '\0') {
+    return false;
+  }
+  const char* argv[] = {"docker", "compose", "-f", file, verb.c_str(), "nats", nullptr};
+  const pid_t pid = fork();
+  if (pid < 0) {
+    return false;
+  }
+  if (pid == 0) {
+    execvp("docker", const_cast<char* const*>(argv));  // NOLINT(concurrency-mt-unsafe)
+    _exit(127);
+  }
+  int status = 0;
+  if (waitpid(pid, &status, 0) < 0) {
+    return false;
+  }
+  return WIFEXITED(status) && WEXITSTATUS(status) == 0;
 }
 
 // Unique per-call suffix so subjects never collide across tests or runs

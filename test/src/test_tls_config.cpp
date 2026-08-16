@@ -163,7 +163,7 @@ TEST_F(TlsConfigTest, EnabledUnreadableCertReturnsNullopt) {
   std::ostringstream err;
   const auto cfg = TlsConfig::from_env(err);
   EXPECT_FALSE(cfg.has_value());
-  EXPECT_NE(err.str().find("Cannot open cert"), std::string::npos);
+  EXPECT_NE(err.str().find("NESTOR_TLS_CERT"), std::string::npos);
 }
 
 TEST_F(TlsConfigTest, EnabledUnreadableKeyReturnsNullopt) {
@@ -174,7 +174,7 @@ TEST_F(TlsConfigTest, EnabledUnreadableKeyReturnsNullopt) {
   std::ostringstream err;
   const auto cfg = TlsConfig::from_env(err);
   EXPECT_FALSE(cfg.has_value());
-  EXPECT_NE(err.str().find("Cannot open key"), std::string::npos);
+  EXPECT_NE(err.str().find("NESTOR_TLS_KEY"), std::string::npos);
 }
 
 }  // namespace nestor::test
