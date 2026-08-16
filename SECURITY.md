@@ -122,10 +122,10 @@ Set two environment variables before starting the server:
 
 ### Mode Behavior
 
-| Mode      | Behavior                          |
-|-----------|-----------------------------------|
-| `required` | All `/v1/*` endpoints require a valid Bearer token. Server fails to start if token is missing or empty. |
-| `none`    | All endpoints are unauthenticated. Used only in test/dev harnesses with explicit opt-in. |
+| Mode        | Behavior                                                                                                |
+|-------------|---------------------------------------------------------------------------------------------------------|
+| `required`  | All `/v1/*` endpoints require a valid Bearer token. Server fails to start if token is missing or empty. |
+| `none`      | All endpoints are unauthenticated. Used only in test/dev harnesses with explicit opt-in.                |
 
 ### Error Response
 
