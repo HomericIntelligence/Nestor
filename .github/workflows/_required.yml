@@ -295,6 +295,16 @@ jobs:
               cmake --preset release
               cmake --build --preset release
               cd build/release
+              # Belt-and-suspenders beyond `docker compose up -d --wait`: that
+              # waits on the /healthz monitoring port, while the client port
+              # (4222) can lag a moment and race the first connect test.
+              for i in $(seq 1 30); do
+                if (exec 3<>/dev/tcp/127.0.0.1/4222) 2>/dev/null; then
+                  echo "NATS broker accepting connections on 4222 (attempt $i)"
+                  break
+                fi
+                sleep 1
+              done
               ctest --output-on-failure -L live-nats --no-tests=error
             '
 
