@@ -10,6 +10,7 @@
 #include "nestor/store.hpp"
 
 #include <atomic>
+#include <fcntl.h>
 #include <filesystem>
 #include <fstream>
 #include <openssl/err.h>
@@ -19,6 +20,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <unistd.h>
 
 #include "httplib.h"
 #include "nlohmann/json.hpp"
@@ -62,10 +64,17 @@ std::pair<std::string, std::string> generate_self_signed(const std::filesystem::
   const std::filesystem::path cert_path = dir / "server.crt";
   const std::filesystem::path key_path = dir / "server.key";
 
-  // Write cert
+  // Write cert (0600: private key material must never be world-readable)
   {
-    FILE* f = fopen(cert_path.c_str(), "wb");
+    const int fd = open(cert_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (fd < 0) {
+      X509_free(x509);
+      EVP_PKEY_free(pkey);
+      throw std::runtime_error("Cannot open cert for writing: " + cert_path.string());
+    }
+    FILE* f = fdopen(fd, "wb");
     if (f == nullptr) {
+      close(fd);
       X509_free(x509);
       EVP_PKEY_free(pkey);
       throw std::runtime_error("Cannot open cert for writing: " + cert_path.string());
@@ -73,10 +82,17 @@ std::pair<std::string, std::string> generate_self_signed(const std::filesystem::
     PEM_write_X509(f, x509);
     fclose(f);
   }
-  // Write key
+  // Write key (0600: private key material must never be world-readable)
   {
-    FILE* f = fopen(key_path.c_str(), "wb");
+    const int fd = open(key_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (fd < 0) {
+      X509_free(x509);
+      EVP_PKEY_free(pkey);
+      throw std::runtime_error("Cannot open key for writing: " + key_path.string());
+    }
+    FILE* f = fdopen(fd, "wb");
     if (f == nullptr) {
+      close(fd);
       X509_free(x509);
       EVP_PKEY_free(pkey);
       throw std::runtime_error("Cannot open key for writing: " + key_path.string());

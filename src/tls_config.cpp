@@ -3,8 +3,10 @@
 #include "nestor/tls_config.hpp"
 
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <string_view>
+#include <system_error>
 
 namespace nestor {
 
@@ -43,8 +45,42 @@ std::optional<TlsConfig> TlsConfig::from_env(std::ostream& err) {
     return std::nullopt;
   }
 
-  cfg.cert_path = cert_env;
-  cfg.key_path = key_env;
+  // ── Resolve + validate operator-supplied TLS material paths ───────────────
+  // NESTOR_TLS_CERT/KEY are deployment config (like the bind address), but we
+  // still harden the open: require an absolute path to an existing regular
+  // file so a misconfigured environment cannot point the server at arbitrary
+  // paths (CodeQL cpp/path-injection).
+  const auto resolve_tls_file = [&err](const char* env_path, const char* label,
+                                       std::string& out) -> bool {
+    if (env_path == nullptr || env_path[0] == '\0') {
+      err << "[TlsConfig] " << label << " is empty.\n";
+      return false;
+    }
+    std::error_code ec;
+    std::filesystem::path raw{env_path};
+    if (!raw.is_absolute()) {
+      err << "[TlsConfig] " << label << " must be an absolute path: " << env_path << "\n";
+      return false;
+    }
+    const std::filesystem::path canon = std::filesystem::weakly_canonical(raw, ec);
+    if (ec) {
+      err << "[TlsConfig] " << label << " cannot be resolved: " << env_path << "\n";
+      return false;
+    }
+    if (!std::filesystem::is_regular_file(canon, ec) || ec) {
+      err << "[TlsConfig] " << label << " is not a regular file: " << canon << "\n";
+      return false;
+    }
+    out = canon.string();
+    return true;
+  };
+
+  if (!resolve_tls_file(cert_env, "NESTOR_TLS_CERT", cfg.cert_path)) {
+    return std::nullopt;
+  }
+  if (!resolve_tls_file(key_env, "NESTOR_TLS_KEY", cfg.key_path)) {
+    return std::nullopt;
+  }
 
   // ── Verify readability (catches permission-denied at config-load time) ────
   if (!std::ifstream(cfg.cert_path).good()) {

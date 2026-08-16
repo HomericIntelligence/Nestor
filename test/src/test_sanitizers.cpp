@@ -15,7 +15,9 @@ TEST_F(SanitizerProof, HeapUseAfterFree) {
   // Allocate memory, free it, and then use it — ASAN detects this
   int* ptr = new int(42);
   delete ptr;
-  // This access should be caught by ASAN
+  // This access should be caught by ASAN (deliberate proof of the sanitizer
+  // build; suppressed in CodeQL as intentional test code)
+  // codeql[cpp/use-after-free]
   [[maybe_unused]] int value = *ptr;
 #endif
 }

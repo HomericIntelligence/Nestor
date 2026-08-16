@@ -18,7 +18,10 @@ using json = nlohmann::json;
 
 // ─── Permissive config helpers ────────────────────────────────────────────────
 // High burst + high RPS so existing tests are unaffected by rate limiting.
-static RateLimitConfig permissive_cfg() {
+// Non-static: the only call sites are default member initializers, which
+// CodeQL's unused-static-function query treats as unreachable for static
+// helpers (HomericIntelligence/Nestor#147).
+RateLimitConfig permissive_cfg() {
   RateLimitConfig cfg;
   cfg.default_rps = 10000.0;
   cfg.default_burst = 10000.0;
@@ -30,7 +33,8 @@ static RateLimitConfig permissive_cfg() {
 
 // Strict config for rate-limit integration tests: research_burst=2 so the 3rd
 // request triggers a 429.
-static RateLimitConfig strict_research_cfg() {
+// Non-static: same rationale as permissive_cfg() (see Nestor#147).
+RateLimitConfig strict_research_cfg() {
   RateLimitConfig cfg;
   cfg.default_rps = 10000.0;
   cfg.default_burst = 10000.0;
