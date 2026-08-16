@@ -32,10 +32,8 @@ WORKDIR /src
 
 # Sync the locked build toolchain first so it caches independently of sources.
 COPY pyproject.toml uv.lock ./
-RUN uv sync --locked
-
-# conan's `include(default)` profile autodetects the system g++ installed above.
-RUN uv run conan profile detect --force
+RUN uv sync --locked \
+    && uv run conan profile detect --force
 
 # Copy Conan files first for dependency caching.
 COPY conanfile.py ./
@@ -80,9 +78,9 @@ ENV NESTOR_PORT=8081
 ENV NATS_URL=nats://localhost:4222
 
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget -qO- http://localhost:${NESTOR_PORT}/v1/health || exit 1
+    CMD ["sh", "-c", "wget -qO- http://localhost:${NESTOR_PORT}/v1/health || exit 1"]
 
-RUN useradd -r -s /usr/sbin/nologin nestor
-USER nestor
+RUN useradd -r -s /usr/sbin/nologin -u 999 nestor
+USER 999
 
 CMD ["Nestor_server"]

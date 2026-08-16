@@ -579,7 +579,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Lint Dockerfile (hadolint)
-        uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf  # v3.1.0
+        uses: hadolint/hadolint-action@2a66e89f53d0771bb131a7fa31f3136336094aa6  # v3.4.0
         with:
           dockerfile: Dockerfile
           failure-threshold: warning
@@ -612,8 +612,10 @@ jobs:
           fi
 
           user=$(docker inspect --format '{{.Config.User}}' nestor:ci)
-          if [ "$user" != "nestor" ]; then
-            echo "Expected USER nestor, got: '$user'"
+          # Dockerfile useradd creates 'nestor' with pinned uid 999 and uses
+          # numeric USER 999 (hadolint DL3066); accept either representation.
+          if [ "$user" != "nestor" ] && [ "$user" != "999" ]; then
+            echo "Expected USER nestor (999), got: '$user'"
             exit 1
           fi
 
