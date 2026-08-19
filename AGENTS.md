@@ -141,7 +141,6 @@ The architecture above follows a small set of design principles inherited from
   transport, and configuration are separable modules with single-owner
   responsibility.
 
-
 ## See also
 
 - `docs/adr/` — architectural decisions (when published).
