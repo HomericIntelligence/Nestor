@@ -124,6 +124,23 @@ reference and a major-version bump.
   `docs/governance/branch-protection.md` and
   `docs/governance/merge-queue.md`.
 
+## Design Philosophy
+
+The architecture above follows a small set of design principles inherited from
+**ProjectOdyssey**, applied to a native C++ agent:
+
+- **Hard guarantees over convenience (KISS).** The server core is C++ with
+  `-Werror`, deterministic Conan/pixi builds, and explicit failure modes — a
+  compile-time guarantee beats a runtime check.
+- **Fail closed (POLA).** TLS material, path handling, and untrusted input
+  default to rejection; validation happens at the boundary, once
+  (`src/tls_config.cpp`), not per call site.
+- **Minimal surface (YAGNI).** Dependencies are added only when a protocol
+  requirement forces them; the NATS and TLS integrations are the full scope.
+- **One responsibility per component (DRY / boundaries).** Research logic,
+  transport, and configuration are separable modules with single-owner
+  responsibility.
+
 ## See also
 
 - `docs/adr/` — architectural decisions (when published).
