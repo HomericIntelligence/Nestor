@@ -251,6 +251,8 @@ void NatsClient::shim_reconnected(__natsConnection* nc, void* /*closure*/) noexc
 }
 // LCOV_EXCL_STOP
 
+// LCOV_EXCL_START — fired only by nats.c after a live connection closes;
+// exercised by the live-NATS integration suite.
 void NatsClient::shim_closed(__natsConnection* nc, void* /*closure*/) noexcept {
   try {
     CallbackState::Lease lease(
@@ -264,6 +266,7 @@ void NatsClient::shim_closed(__natsConnection* nc, void* /*closure*/) noexcept {
     std::fputs("[NatsClient] closed callback failed.\n", stderr);
   }
 }
+// LCOV_EXCL_STOP
 
 // LCOV_EXCL_START — invoked only on a nats.c delivery thread for messages
 // arriving over a live connection; covered by integration tests.
@@ -297,6 +300,8 @@ void NatsClient::shim_research_message(__natsConnection* nc, __natsSubscription*
 }
 // LCOV_EXCL_STOP
 
+// LCOV_EXCL_START — invoked only by nats.c after a live async subscription's
+// final message handler; exercised by the live-NATS integration suite.
 void NatsClient::shim_subscription_complete(void* closure) noexcept {
   auto* sub = static_cast<natsSubscription*>(closure);
   try {
@@ -309,6 +314,7 @@ void NatsClient::shim_subscription_complete(void* closure) noexcept {
     // because callback admission and registry ownership are independent.
   }
 }
+// LCOV_EXCL_STOP
 
 // ─── set_research_status_handler() ───────────────────────────────────────────
 
