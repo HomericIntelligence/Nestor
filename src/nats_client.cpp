@@ -7,95 +7,323 @@
 #include "nestor/nats_client.hpp"
 
 #include <chrono>
+#include <cstdio>
 #include <iostream>
 #include <random>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
 
 #include "nats.h"
 #include "nlohmann/json.hpp"
 
 namespace nestor {
 
+struct NatsClient::CallbackState {
+  class Lease {
+   public:
+    explicit Lease(std::shared_ptr<CallbackState> state) : state_(std::move(state)) {
+      if (state_ != nullptr) {
+        active_ = state_->try_enter();
+      }
+    }
+    Lease(const Lease&) = delete;
+    Lease& operator=(const Lease&) = delete;
+    Lease(Lease&& other) noexcept
+        : state_(std::move(other.state_)), active_(std::exchange(other.active_, false)) {}
+    ~Lease() {
+      if (active_) {
+        state_->leave();
+      }
+    }
+    explicit operator bool() const noexcept { return active_; }
+    CallbackState* operator->() const noexcept { return state_.get(); }
+
+   private:
+    std::shared_ptr<CallbackState> state_;
+    bool active_ = false;
+  };
+
+  static std::shared_ptr<CallbackState> find_connection(natsConnection* nc) {
+    std::scoped_lock lk(registry_mu_);
+    const auto it = connections_.find(nc);
+    return it == connections_.end() ? nullptr : it->second.lock();
+  }
+
+  static bool register_connection(natsConnection* nc, const std::shared_ptr<CallbackState>& state) {
+    std::scoped_lock event_lk(state->event_mu_);
+    if (state->is_closing()) {
+      return false;
+    }
+    {
+      std::scoped_lock registry_lk(registry_mu_);
+      connections_[nc] = state;  // weak_ptr: registry never owns callback state
+    }
+    if (state->is_closing()) {
+      unregister_connection(nc);
+      return false;
+    }
+    state->set_connection_status_locked(natsConnection_Status(nc) == NATS_CONN_STATUS_CONNECTED);
+    return true;
+  }
+
+  static void unregister_connection(natsConnection* nc) {
+    if (nc == nullptr) {
+      return;
+    }
+    std::scoped_lock lk(registry_mu_);
+    connections_.erase(nc);
+  }
+
+  static std::shared_ptr<CallbackState> find_subscription(natsSubscription* sub) {
+    std::scoped_lock lk(registry_mu_);
+    const auto it = subscriptions_.find(sub);
+    return it == subscriptions_.end() ? nullptr : it->second.lock();
+  }
+
+  static void register_subscription(natsSubscription* sub,
+                                    const std::shared_ptr<CallbackState>& state) {
+    std::scoped_lock lk(registry_mu_);
+    subscriptions_[sub] = state;
+  }
+
+  static bool has_subscription(natsSubscription* sub) {
+    std::scoped_lock lk(registry_mu_);
+    return subscriptions_.contains(sub);
+  }
+
+  static void unregister_subscription(natsSubscription* sub) {
+    if (sub == nullptr) {
+      return;
+    }
+    std::scoped_lock lk(registry_mu_);
+    subscriptions_.erase(sub);
+  }
+
+  void set_handler(MessageHandler handler) {
+    std::scoped_lock lk(lifecycle_mu_);
+    handler_ = std::move(handler);
+  }
+
+  MessageHandler handler_snapshot() {
+    std::scoped_lock lk(lifecycle_mu_);
+    return handler_;
+  }
+
+  bool has_handler() {
+    std::scoped_lock lk(lifecycle_mu_);
+    return static_cast<bool>(handler_);
+  }
+
+  bool is_closing() {
+    std::scoped_lock lk(lifecycle_mu_);
+    return closing_;
+  }
+
+  void begin_close() {
+    std::scoped_lock lk(lifecycle_mu_);
+    closing_ = true;
+  }
+
+  void wait_for_active_callbacks() {
+    std::unique_lock lk(lifecycle_mu_);
+    callbacks_done_cv_.wait(lk, [this] { return active_callbacks_ == 0; });
+  }
+
+  bool is_connected() const noexcept { return connected_.load(std::memory_order_acquire); }
+  std::uint64_t generation() const noexcept { return generation_.load(std::memory_order_acquire); }
+
+  void mark_disconnected() {
+    std::scoped_lock lk(event_mu_);
+    set_connection_status_locked(false);
+  }
+
+  void mark_reconnected() {
+    std::scoped_lock lk(event_mu_);
+    set_connection_status_locked(true);
+  }
+
+  void mark_subscription_complete(natsSubscription* sub) {
+    {
+      std::scoped_lock lk(completion_mu_);
+      completed_subscriptions_.insert(sub);
+    }
+    completion_cv_.notify_all();
+  }
+
+  bool wait_for_subscription_complete(natsSubscription* sub, std::chrono::milliseconds timeout) {
+    std::unique_lock lk(completion_mu_);
+    const bool completed = completion_cv_.wait_for(
+        lk, timeout, [this, sub] { return completed_subscriptions_.contains(sub); });
+    completed_subscriptions_.erase(sub);
+    return completed;
+  }
+
+  void forget_subscription(natsSubscription* sub) {
+    std::scoped_lock lk(completion_mu_);
+    completed_subscriptions_.erase(sub);
+  }
+
+  std::condition_variable_any wake_cv_;
+
+ private:
+  bool try_enter() {
+    std::scoped_lock lk(lifecycle_mu_);
+    if (closing_) {
+      return false;
+    }
+    ++active_callbacks_;
+    return true;
+  }
+
+  void leave() {
+    {
+      std::scoped_lock lk(lifecycle_mu_);
+      --active_callbacks_;
+    }
+    callbacks_done_cv_.notify_all();
+  }
+
+  void set_connection_status_locked(bool connected) {
+    const bool was_connected = connected_.exchange(connected, std::memory_order_acq_rel);
+    if (connected && !was_connected) {
+      generation_.fetch_add(1, std::memory_order_acq_rel);
+    }
+    wake_cv_.notify_all();
+  }
+
+  std::mutex lifecycle_mu_;
+  std::condition_variable callbacks_done_cv_;
+  bool closing_ = false;
+  std::size_t active_callbacks_ = 0;
+  MessageHandler handler_;
+  std::mutex event_mu_;
+  std::atomic<bool> connected_{false};
+  std::atomic<std::uint64_t> generation_{0};
+  std::mutex completion_mu_;
+  std::condition_variable completion_cv_;
+  std::unordered_set<natsSubscription*> completed_subscriptions_;
+  inline static std::mutex registry_mu_;
+  inline static std::unordered_map<natsConnection*, std::weak_ptr<CallbackState>> connections_;
+  inline static std::unordered_map<natsSubscription*, std::weak_ptr<CallbackState>> subscriptions_;
+};
+
 // ─── Construction / Destruction ───────────────────────────────────────────────
 
-NatsClient::NatsClient(const std::string& url) : url_(url) {}
+NatsClient::NatsClient(const std::string& url)
+    : url_(url), callback_state_(std::make_shared<CallbackState>()) {}
 
 NatsClient::~NatsClient() { close(); }
 
 // ─── Static C-callback shims ─────────────────────────────────────────────────
-// nats.c expects: void(*)(natsConnection*, void* closure).
-// __natsConnection (forward-declared in the header) == natsConnection typedef,
-// so these shims match natsConnectionHandler exactly.
+// nats.c retains the connection/subscription objects while it invokes their
+// callbacks. The pointers are opaque registry keys; callbacks never dereference
+// NatsClient or a raw CallbackState closure.
 
 // LCOV_EXCL_START — fired only by nats.c on a real connection drop/reconnect;
 // covered by integration tests against a live broker.
-void NatsClient::shim_disconnected(__natsConnection* /*nc*/, void* closure) {
-  static_cast<NatsClient*>(closure)->on_disconnected();
+void NatsClient::shim_disconnected(__natsConnection* nc, void* /*closure*/) noexcept {
+  try {
+    CallbackState::Lease lease(
+        CallbackState::find_connection(reinterpret_cast<natsConnection*>(nc)));
+    if (!lease) {
+      return;
+    }
+    lease->mark_disconnected();
+    std::fputs("[NatsClient] Disconnected from NATS.\n", stderr);
+  } catch (...) {
+    std::fputs("[NatsClient] disconnected callback failed.\n", stderr);
+  }
 }
-void NatsClient::shim_reconnected(__natsConnection* /*nc*/, void* closure) {
-  static_cast<NatsClient*>(closure)->on_reconnected();
+
+void NatsClient::shim_reconnected(__natsConnection* nc, void* /*closure*/) noexcept {
+  try {
+    CallbackState::Lease lease(
+        CallbackState::find_connection(reinterpret_cast<natsConnection*>(nc)));
+    if (!lease) {
+      return;
+    }
+    lease->mark_reconnected();
+    std::fputs("[NatsClient] Reconnected to NATS.\n", stdout);
+  } catch (...) {
+    std::fputs("[NatsClient] reconnected callback failed.\n", stderr);
+  }
 }
 // LCOV_EXCL_STOP
-void NatsClient::shim_closed(__natsConnection* /*nc*/, void* closure) {
-  static_cast<NatsClient*>(closure)->on_closed();
+
+void NatsClient::shim_closed(__natsConnection* nc, void* /*closure*/) noexcept {
+  try {
+    CallbackState::Lease lease(
+        CallbackState::find_connection(reinterpret_cast<natsConnection*>(nc)));
+    if (!lease) {
+      return;
+    }
+    lease->mark_disconnected();
+    std::fputs("[NatsClient] NATS connection closed (ClosedCB).\n", stderr);
+  } catch (...) {
+    std::fputs("[NatsClient] closed callback failed.\n", stderr);
+  }
 }
 
 // LCOV_EXCL_START — invoked only on a nats.c delivery thread for messages
 // arriving over a live connection; covered by integration tests.
-void NatsClient::shim_research_message(__natsConnection* /*nc*/, __natsSubscription* /*sub*/,
-                                       __natsMsg* msg, void* closure) {
-  auto* self = static_cast<NatsClient*>(closure);
+void NatsClient::shim_research_message(__natsConnection* nc, __natsSubscription* /*sub*/,
+                                       __natsMsg* msg, void* /*closure*/) noexcept {
   auto* m = reinterpret_cast<natsMsg*>(msg);
-  // research_handler_ is immutable after connect() — safe to read unlocked
-  // on this nats.c delivery thread. Never perform JetStream RPCs here.
-  if (self->research_handler_) {
-    const char* subject = natsMsg_GetSubject(m);
-    const char* data = natsMsg_GetData(m);
-    const int len = natsMsg_GetDataLength(m);
-    try {
-      self->research_handler_(std::string(subject != nullptr ? subject : ""),
-                              std::string(data != nullptr ? data : "", static_cast<size_t>(len)));
-    } catch (const std::exception& e) {
-      std::cerr << "[NatsClient] research status handler threw: " << e.what() << "\n";
+  try {
+    CallbackState::Lease lease(
+        CallbackState::find_connection(reinterpret_cast<natsConnection*>(nc)));
+    if (lease) {
+      MessageHandler handler = lease->handler_snapshot();
+      if (handler) {
+        const char* subject = natsMsg_GetSubject(m);
+        const char* data = natsMsg_GetData(m);
+        const int len = natsMsg_GetDataLength(m);
+        try {
+          handler(std::string(subject != nullptr ? subject : ""),
+                  std::string(data != nullptr ? data : "", static_cast<std::size_t>(len)));
+        } catch (const std::exception& e) {
+          std::fprintf(stderr, "[NatsClient] research status handler threw: %s\n", e.what());
+        } catch (...) {
+          std::fputs("[NatsClient] research status handler threw a non-standard exception.\n",
+                     stderr);
+        }
+      }
     }
+  } catch (...) {
+    std::fputs("[NatsClient] research message callback failed.\n", stderr);
   }
   natsMsg_Destroy(m);
 }
 // LCOV_EXCL_STOP
 
+void NatsClient::shim_subscription_complete(void* closure) noexcept {
+  auto* sub = static_cast<natsSubscription*>(closure);
+  try {
+    const std::shared_ptr<CallbackState> state = CallbackState::find_subscription(sub);
+    if (state != nullptr) {
+      state->mark_subscription_complete(sub);
+    }
+  } catch (...) {
+    // Completion is advisory. close() uses a bounded wait and remains safe
+    // because callback admission and registry ownership are independent.
+  }
+}
+
 // ─── set_research_status_handler() ───────────────────────────────────────────
 
 void NatsClient::set_research_status_handler(MessageHandler handler) {
-  research_handler_ = std::move(handler);
-}
-
-// ─── Callback handlers ────────────────────────────────────────────────────────
-
-// LCOV_EXCL_START — invoked only by nats.c connection-event callbacks;
-// covered by integration tests against a live broker.
-void NatsClient::on_disconnected() {
-  connected_.store(false, std::memory_order_release);
-  std::cerr << "[NatsClient] Disconnected from NATS.\n";
-  wake_cv_.notify_all();
-}
-
-void NatsClient::on_reconnected() {
-  connected_.store(true, std::memory_order_release);
-  generation_.fetch_add(1, std::memory_order_acq_rel);
-  std::cout << "[NatsClient] Reconnected to NATS.\n";
-  wake_cv_.notify_all();
-}
-// LCOV_EXCL_STOP
-
-void NatsClient::on_closed() {
-  connected_.store(false, std::memory_order_release);
-  std::cerr << "[NatsClient] NATS connection closed (ClosedCB).\n";
-  wake_cv_.notify_all();
+  callback_state_->set_handler(std::move(handler));
 }
 
 // ─── connect() ────────────────────────────────────────────────────────────────
 
 bool NatsClient::connect() {
-  // Build options.
+  std::scoped_lock lifecycle_lk(close_mu_);
+  if (callback_state_->is_closing()) {
+    return false;
+  }
+
   natsOptions* opts = nullptr;
   natsStatus s = natsOptions_Create(&opts);
   if (s != NATS_OK) {
@@ -111,14 +339,12 @@ bool NatsClient::connect() {
   natsOptions_SetReconnectWait(opts, 2000);         // 2 s between attempts
   natsOptions_SetReconnectJitter(opts, 500, 1000);  // jitter: 0.5 s plain / 1 s TLS
 
-  // Register callbacks — static member shims forward to member handlers via closure.
-  // shim_* are static methods matching natsConnectionHandler typedef.
   natsOptions_SetDisconnectedCB(
-      opts, reinterpret_cast<natsConnectionHandler>(NatsClient::shim_disconnected), this);
+      opts, reinterpret_cast<natsConnectionHandler>(NatsClient::shim_disconnected), nullptr);
   natsOptions_SetReconnectedCB(
-      opts, reinterpret_cast<natsConnectionHandler>(NatsClient::shim_reconnected), this);
+      opts, reinterpret_cast<natsConnectionHandler>(NatsClient::shim_reconnected), nullptr);
   natsOptions_SetClosedCB(opts, reinterpret_cast<natsConnectionHandler>(NatsClient::shim_closed),
-                          this);
+                          nullptr);
 
   // Start the provisioner before attempting the first connect so it's ready
   // to process the generation bump from a successful try_connect_once().
@@ -126,7 +352,7 @@ bool NatsClient::connect() {
 
   // Attempt initial connection.
   const bool ok = try_connect_once();
-  if (!ok) {
+  if (!ok && !callback_state_->is_closing()) {
     // Start background retry loop.
     reconnect_thread_ = std::jthread([this](std::stop_token st) { reconnect_loop(st); });
     std::cout << "[NatsClient] NATS unreachable at startup — retrying in background.\n";
@@ -137,30 +363,42 @@ bool NatsClient::connect() {
 // ─── try_connect_once() ───────────────────────────────────────────────────────
 
 bool NatsClient::try_connect_once() {
+  const std::shared_ptr<CallbackState> callbacks = callback_state_;
+  if (callbacks->is_closing()) {
+    return false;
+  }
+
   natsConnection* nc = nullptr;
-  natsStatus s = natsConnection_Connect(&nc, reinterpret_cast<natsOptions*>(opts_));
+  const natsStatus s = natsConnection_Connect(&nc, reinterpret_cast<natsOptions*>(opts_));
   if (s != NATS_OK) {
     std::cerr << "[NatsClient] Connect attempt to " << url_ << " failed: " << natsStatus_GetText(s)
               << "\n";
     return false;
   }
 
-  // LCOV_EXCL_START — success branch needs a live NATS broker.
+  natsConnection* previous = nullptr;
+  bool accepted = false;
   {
-    std::scoped_lock lk(state_mu_);
-    // Close any previous connection (defensive — normally nullptr here).
-    if (conn_ != nullptr) {
-      natsConnection_Destroy(conn_);
+    std::scoped_lock lk(connection_mu_, state_mu_);
+    if (!callbacks->is_closing() && CallbackState::register_connection(nc, callbacks)) {
+      previous = reinterpret_cast<natsConnection*>(conn_);
+      conn_ = nc;
+      accepted = true;
     }
-    conn_ = nc;
-    connected_.store(true, std::memory_order_release);
-    generation_.fetch_add(1, std::memory_order_acq_rel);
+  }
+
+  if (!accepted) {
+    natsConnection_Destroy(nc);
+    return false;
+  }
+  if (previous != nullptr) {
+    CallbackState::unregister_connection(previous);
+    natsConnection_Destroy(previous);
   }
 
   std::cout << "[NatsClient] Connected to " << url_ << "\n";
-  wake_cv_.notify_all();
+  callbacks->wake_cv_.notify_all();
   return true;
-  // LCOV_EXCL_STOP
 }
 
 // ─── reconnect_loop() ─────────────────────────────────────────────────────────
@@ -169,21 +407,21 @@ bool NatsClient::try_connect_once() {
 // live NATS broker; the wake-on-stop path is timing-dependent. Covered by
 // integration tests.
 void NatsClient::reconnect_loop(std::stop_token st) {
+  const std::shared_ptr<CallbackState> callbacks = callback_state_;
   std::mt19937 rng{std::random_device{}()};
   unsigned attempt = 0;
 
-  while (!st.stop_requested() && !connected_.load(std::memory_order_acquire)) {
+  while (!st.stop_requested() && !callbacks->is_connected()) {
     const auto delay = next_delay(policy_, attempt++, rng);
 
     {
       std::unique_lock<std::mutex> lk(state_mu_);
       // Interruptible sleep: wakes early on stop or successful connect.
-      wake_cv_.wait_for(lk, st, delay, [&] {
-        return st.stop_requested() || connected_.load(std::memory_order_acquire);
-      });
+      callbacks->wake_cv_.wait_for(
+          lk, st, delay, [&] { return st.stop_requested() || callbacks->is_connected(); });
     }
 
-    if (st.stop_requested() || connected_.load(std::memory_order_acquire)) {
+    if (st.stop_requested() || callbacks->is_connected()) {
       return;
     }
 
@@ -200,6 +438,7 @@ void NatsClient::reconnect_loop(std::stop_token st) {
 // bumps generation_; unit tests only exercise the wait/stop path. Covered by
 // integration tests.
 void NatsClient::provisioner_loop(std::stop_token st) {
+  const std::shared_ptr<CallbackState> callbacks = callback_state_;
   std::mt19937 rng{std::random_device{}()};
 
   while (!st.stop_requested()) {
@@ -210,16 +449,14 @@ void NatsClient::provisioner_loop(std::stop_token st) {
 
     if (retry_pending) {
       // Wait until the deadline or a relevant state change.
-      wake_cv_.wait_until(lk, st, provision_retry_deadline_, [&] {
-        return st.stop_requested() ||
-               generation_.load(std::memory_order_acquire) > last_provisioned_gen_;
+      callbacks->wake_cv_.wait_until(lk, st, provision_retry_deadline_, [&] {
+        return st.stop_requested() || callbacks->generation() > last_provisioned_gen_;
       });
     } else {
       // Wait indefinitely for a new connection event.
-      wake_cv_.wait(lk, st, [&] {
+      callbacks->wake_cv_.wait(lk, st, [&] {
         return st.stop_requested() ||
-               (connected_.load(std::memory_order_acquire) &&
-                generation_.load(std::memory_order_acquire) > last_provisioned_gen_);
+               (callbacks->is_connected() && callbacks->generation() > last_provisioned_gen_);
       });
     }
 
@@ -227,23 +464,23 @@ void NatsClient::provisioner_loop(std::stop_token st) {
       return;
     }
 
-    if (!connected_.load(std::memory_order_acquire)) {
+    if (!callbacks->is_connected()) {
       // Connection dropped; clear provisioner retry state and wait again.
       provision_attempts_ = 0;
       provision_retry_deadline_ = {};
       continue;
     }
 
-    if (generation_.load(std::memory_order_acquire) <= last_provisioned_gen_ && !retry_pending) {
+    if (callbacks->generation() <= last_provisioned_gen_ && !retry_pending) {
       continue;
     }
 
     // Provision JetStream while holding state_mu_.
     if (provision_jetstream_locked()) {
-      last_provisioned_gen_ = generation_.load(std::memory_order_acquire);
+      last_provisioned_gen_ = callbacks->generation();
       provision_attempts_ = 0;
       provision_retry_deadline_ = {};
-    } else if (connected_.load(std::memory_order_acquire)) {
+    } else if (callbacks->is_connected()) {
       // Provisioning failed but still connected — schedule a retry.
       provision_retry_deadline_ =
           std::chrono::steady_clock::now() + next_delay(policy_, provision_attempts_++, rng);
@@ -268,7 +505,7 @@ bool NatsClient::provision_jetstream_locked() {
     js_ = nullptr;
   }
 
-  if (stop_src_.stop_requested() || conn_ == nullptr) {
+  if (stop_src_.stop_requested() || callback_state_->is_closing() || conn_ == nullptr) {
     return false;
   }
 
@@ -285,7 +522,7 @@ bool NatsClient::provision_jetstream_locked() {
     return false;
   }
 
-  if (stop_src_.stop_requested()) {
+  if (stop_src_.stop_requested() || callback_state_->is_closing()) {
     jsCtx_Destroy(new_js);
     return false;
   }
@@ -297,6 +534,10 @@ bool NatsClient::provision_jetstream_locked() {
   // independent of stream provisioning, so (re)create it regardless.
   const bool streams_ok = ensure_streams();
 
+  if (stop_src_.stop_requested() || callback_state_->is_closing()) {
+    return false;
+  }
+
   // (Re)create the core research-status subscription (ADR-013 §7).
   resubscribe_research_locked();
 
@@ -307,25 +548,31 @@ bool NatsClient::provision_jetstream_locked() {
 // ─── close() ─────────────────────────────────────────────────────────────────
 
 void NatsClient::close() {
-  // Step 1: tear down the live connection to unblock any in-flight JetStream
-  //         RPCs on the provisioner thread before we request stops.
-  natsConnection* snap_conn = nullptr;
-  {
-    std::scoped_lock lk(state_mu_);
-    snap_conn = reinterpret_cast<natsConnection*>(conn_);
-  }
-  if (snap_conn != nullptr) {
-    natsConnection_Close(snap_conn);  // unblocks pending RPCs (R1-#4)
-  }
+  std::scoped_lock lifecycle_lk(close_mu_);
+  const std::shared_ptr<CallbackState> callbacks = callback_state_;
 
-  // Step 2: signal threads to stop and wake them.
+  // Gate admission first. A callback that already acquired a lease is counted
+  // and close waits for it below; callbacks that arrive later cannot call user code.
+  callbacks->begin_close();
   stop_src_.request_stop();
   reconnect_thread_.request_stop();
   provisioner_thread_.request_stop();
-  wake_cv_.notify_all();
+  callbacks->wake_cv_.notify_all();
 
-  // Step 3: join threads (jthread destructors do this, but be explicit before
-  //         we destroy shared state they reference).
+  // Snapshot with the dedicated connection lock, then close without holding a
+  // Nestor mutex. This unblocks any JetStream RPC while the provisioner owns
+  // state_mu_.
+  natsConnection* connection = nullptr;
+  {
+    std::scoped_lock connection_lk(connection_mu_);
+    connection = reinterpret_cast<natsConnection*>(conn_);
+  }
+  if (connection != nullptr) {
+    natsConnection_Close(connection);
+  }
+
+  // No connection handle or options can be destroyed until the only thread
+  // that calls natsConnection_Connect() and the provisioner have stopped.
   if (reconnect_thread_.joinable()) {
     reconnect_thread_.join();
   }
@@ -333,34 +580,56 @@ void NatsClient::close() {
     provisioner_thread_.join();
   }
 
-  // Step 4: destroy resources in correct order.
+  natsSubscription* subscription = nullptr;
+  jsCtx* js = nullptr;
+  natsOptions* options = nullptr;
   {
-    std::scoped_lock lk(state_mu_);
-    if (research_sub_ != nullptr) {
-      natsSubscription_Destroy(reinterpret_cast<natsSubscription*>(research_sub_));
-      research_sub_ = nullptr;
-    }
-    if (js_ != nullptr) {
-      jsCtx_Destroy(reinterpret_cast<jsCtx*>(js_));
-      js_ = nullptr;
-    }
-    if (conn_ != nullptr) {
-      natsConnection_Destroy(reinterpret_cast<natsConnection*>(conn_));
-      conn_ = nullptr;
-    }
-    if (opts_ != nullptr) {
-      natsOptions_Destroy(reinterpret_cast<natsOptions*>(opts_));
-      opts_ = nullptr;
-    }
-    connected_.store(false, std::memory_order_release);
+    std::scoped_lock lk(connection_mu_, state_mu_);
+    subscription = reinterpret_cast<natsSubscription*>(research_sub_);
+    research_sub_ = nullptr;
+    js = reinterpret_cast<jsCtx*>(js_);
+    js_ = nullptr;
+    connection = reinterpret_cast<natsConnection*>(conn_);
+    conn_ = nullptr;
+    options = reinterpret_cast<natsOptions*>(opts_);
+    opts_ = nullptr;
   }
+
+  // This wait is deliberate: a user handler admitted before the closing gate
+  // can still own caller resources. close() does not return until that known
+  // active handler returns. It does not wait indefinitely for a library event.
+  callbacks->wait_for_active_callbacks();
+
+  // nats.c documents OnComplete as the point after the final async message
+  // handler. The notification is advisory and can be dropped on allocation or
+  // shutdown failure, so its wait is bounded. Registry erasure is the fallback.
+  if (subscription != nullptr && CallbackState::has_subscription(subscription)) {
+    (void)callbacks->wait_for_subscription_complete(subscription, std::chrono::milliseconds{500});
+  }
+
+  CallbackState::unregister_subscription(subscription);
+  callbacks->forget_subscription(subscription);
+  CallbackState::unregister_connection(connection);
+
+  if (subscription != nullptr) {
+    natsSubscription_Destroy(subscription);
+  }
+  if (js != nullptr) {
+    jsCtx_Destroy(js);
+  }
+  if (connection != nullptr) {
+    natsConnection_Destroy(connection);
+  }
+  if (options != nullptr) {
+    natsOptions_Destroy(options);
+  }
+
+  callbacks->mark_disconnected();
 }
 
 // ─── is_connected() ───────────────────────────────────────────────────────────
 
-bool NatsClient::is_connected() const noexcept {
-  return connected_.load(std::memory_order_acquire);
-}
+bool NatsClient::is_connected() const noexcept { return callback_state_->is_connected(); }
 
 // ─── ensure_streams() ────────────────────────────────────────────────────────
 // Idempotent — safe to call after every (re)connect.
@@ -431,22 +700,36 @@ bool NatsClient::ensure_streams() {
 // successful connect; the Subscribe RPC needs a live broker. Covered by
 // integration tests.
 void NatsClient::resubscribe_research_locked() {
-  if (!research_handler_ || conn_ == nullptr) {
+  const std::shared_ptr<CallbackState> callbacks = callback_state_;
+  if (!callbacks->has_handler() || callbacks->is_closing() || conn_ == nullptr) {
     return;
   }
   if (research_sub_ != nullptr) {
-    natsSubscription_Destroy(reinterpret_cast<natsSubscription*>(research_sub_));
+    auto* old_sub = reinterpret_cast<natsSubscription*>(research_sub_);
+    CallbackState::unregister_subscription(old_sub);
+    callbacks->forget_subscription(old_sub);
+    natsSubscription_Destroy(old_sub);
     research_sub_ = nullptr;
   }
   natsSubscription* sub = nullptr;
   const natsStatus s = natsConnection_Subscribe(
       &sub, reinterpret_cast<natsConnection*>(conn_), "hi.research.>",
-      reinterpret_cast<natsMsgHandler>(NatsClient::shim_research_message), this);
+      reinterpret_cast<natsMsgHandler>(NatsClient::shim_research_message), nullptr);
   if (s != NATS_OK) {
     std::cerr << "[NatsClient] Subscribe to hi.research.> failed: " << natsStatus_GetText(s)
               << "\n";
     return;
   }
+
+  CallbackState::register_subscription(sub, callbacks);
+  const natsStatus completion_status = natsSubscription_SetOnCompleteCB(
+      sub, NatsClient::shim_subscription_complete, static_cast<void*>(sub));
+  if (completion_status != NATS_OK) {
+    CallbackState::unregister_subscription(sub);
+    std::cerr << "[NatsClient] Subscription completion callback unavailable: "
+              << natsStatus_GetText(completion_status) << "\n";
+  }
+
   research_sub_ = sub;
   std::cout << "[NatsClient] Subscribed to hi.research.> (status updates).\n";
 }
@@ -458,7 +741,7 @@ bool NatsClient::publish(const std::string& subject, const std::string& payload)
   // R1-#2: hold full-call lock; eliminates snapshot-under-lock complexity.
   std::scoped_lock lk(state_mu_);
 
-  if (!connected_.load(std::memory_order_acquire) || js_ == nullptr) {
+  if (!callback_state_->is_connected() || js_ == nullptr) {
     return false;
   }
 
@@ -490,7 +773,7 @@ void NatsClient::publish_log(const std::string& subject, const std::string& leve
   // R1-#2: hold full-call lock for consistency.
   std::scoped_lock lk(state_mu_);
 
-  if (!connected_.load(std::memory_order_acquire) || conn_ == nullptr) {
+  if (!callback_state_->is_connected() || conn_ == nullptr) {
     return;  // Graceful degradation — NATS unavailable.
   }
 
