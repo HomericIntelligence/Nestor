@@ -32,6 +32,12 @@ write acknowledgment and readback may make one issue-create request. Other
 writers lose the compare-and-write or observe an existing intent. No timeout,
 heartbeat, process restart, or absence from issue search authorizes takeover.
 
+The transport must also fence retries inside its HTTP dependency. For pinned
+cpp-httplib 0.18.3, a one-use header writer rejects repeated serialization before
+the request buffer is flushed. Reconnection alone does not grant another
+transmission. Dependency changes require revalidation of this boundary; TLS
+verification, authentication, and bounded I/O remain enabled.
+
 After an uncertain creation, enumerate open and closed issues with bounded
 pagination. Adopt exactly one issue with the exact intake marker, title, and
 body. Missing, duplicate, edited, or unavailable results require reconciliation.

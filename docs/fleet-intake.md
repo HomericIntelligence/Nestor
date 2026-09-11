@@ -73,8 +73,11 @@ their private backend/worker storage.
 
 The creation path confirms a Contents write and exact readback before proceeding.
 The `prepared` to `creating` transition includes the prior blob SHA. A compare
-conflict or uncertain response cannot authorize an issue POST. The issue-create
-transport makes one attempt and never retries internally.
+conflict or uncertain response cannot authorize an issue POST. A one-use
+transmission fence permits only one serialized request per transport invocation.
+The pinned HTTP library can reconnect internally after a lost response, but the
+fence throws before a repeated request can flush its request line, headers, or
+body. The durable `creating` intent remains available for reconciliation.
 
 If the issue response is lost, another invocation reads `creating` and searches
 open and closed issues for the exact marker/body. Exactly one matching issue can
@@ -91,13 +94,19 @@ Closing a work issue does not erase the intake or authorize another creation.
 
 The implementation includes the intake service, HTTP routes, startup validation,
 and GitHub Contents adapter. The default transport uses certificate-verified HTTPS
-to `api.github.com`, no redirects or automatic mutation retry, a three-second
+to `api.github.com`, no redirects or repeated mutation transmission, a three-second
 connect timeout, five-second read/write timeouts, and an 8 MiB response limit.
+The fence depends on cpp-httplib 0.18.3 invoking its header writer before the
+buffered request flush; compilation rejects another version until that contract
+is revalidated. Calls sharing a client serialize fence installation and sending.
 Credentials remain on the backend. The injected transport/client seams exist for
 controlled tests; the server exposes no alternate GitHub endpoint setting.
 
 Focused native tests exercise concurrent callers, controlled GitHub responses,
-actual loopback HTTP transport, and the compiled server's startup rejection. They
+actual loopback HTTP transport, and the compiled server's startup rejection.
+Controlled stream reentry exercises the pinned serializer's retry boundary,
+exception cleanup, later independent requests, and reconciliation from emitted
+issue bytes. It does not reproduce a TLS failure against a live service. Tests
 also cover lost creation acknowledgments, exact readback, closed issue
 reconciliation, and metadata validation. Full intake-to-research-agent execution
 and reviewed promotion to Telemachy's existing-epic registration remain separate

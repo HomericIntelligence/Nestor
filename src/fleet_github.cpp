@@ -1,14 +1,20 @@
 #include "nestor/fleet_github.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
+#include <mutex>
 #include <openssl/evp.h>
 #include <regex>
+#include <string_view>
 
 #include "httplib.h"
 
 namespace nestor {
 namespace {
+static_assert(std::string_view(CPPHTTPLIB_VERSION) == "0.18.3",
+              "Revalidate the pre-flush transmission fence before upgrading cpp-httplib");
+
 void require(bool condition, const char* code, int status = 503) {
   if (!condition) throw IntakeError(code, status);
 }
@@ -50,20 +56,21 @@ std::string decode(std::string input) {
 }  // namespace
 
 IntakeHttpRequest github_intake_request(const std::string& token,
-                                        std::shared_ptr<httplib::Client> client) {
+                                        std::shared_ptr<httplib::ClientImpl> client) {
   require(!token.empty() && token.size() <= 256 &&
               std::all_of(token.begin(), token.end(),
                           [](unsigned char value) { return value > 32 && value < 127; }),
           "github_backend_token_invalid", 503);
-  if (!client) client = std::make_shared<httplib::Client>("https://api.github.com");
+  if (!client) client = std::make_shared<httplib::SSLClient>("api.github.com");
   client->set_follow_location(false);
   client->enable_server_certificate_verification(true);
   client->set_connection_timeout(3);
   client->set_read_timeout(5);
   client->set_write_timeout(5);
   client->set_keep_alive(false);
-  return [client, token](const std::string& method, const std::string& path,
-                         const json& body) -> IntakeHttpResponse {
+  auto transmission_mutex = std::make_shared<std::mutex>();
+  return [client, token, transmission_mutex](const std::string& method, const std::string& path,
+                                             const json& body) -> IntakeHttpResponse {
     require((method == "GET" || method == "PUT" || method == "POST") &&
                 path.starts_with("/repos/") && path.size() <= 512 &&
                 std::all_of(path.begin(), path.end(),
@@ -88,8 +95,14 @@ IntakeHttpRequest github_intake_request(const std::string& token,
       bytes.append(data, size);
       return true;
     };
-    // A single send is deliberate: no retry, redirect, proxy environment,
-    // authentication refresh, or alternate endpoint may repeat a mutation.
+    std::lock_guard transmission_lock(*transmission_mutex);
+    auto serialized = std::make_shared<std::atomic<bool>>(false);
+    client->set_header_writer([serialized](httplib::Stream& stream, httplib::Headers& headers) {
+      // In 0.18.3 this callback runs before the buffered request line or headers
+      // flush. Its return value is ignored; throwing also prevents body writes.
+      require(!serialized->exchange(true), "github_transport_unconfirmed");
+      return httplib::detail::write_headers(stream, headers);
+    });
     const auto result = client->send(request);
     require(static_cast<bool>(result), "github_transport_unconfirmed");
     auto parsed = json::parse(bytes, nullptr, false);

@@ -1,7 +1,11 @@
 #include "nestor/fleet_github.hpp"
 
+#include <algorithm>
+#include <array>
 #include <openssl/evp.h>
+#include <sys/socket.h>
 #include <thread>
+#include <unistd.h>
 
 #include "httplib.h"
 #include <gtest/gtest.h>
@@ -144,7 +148,7 @@ class FleetGitHubTransport : public ::testing::Test {
   void SetUp() override {
     const auto port = server.bind_to_any_port("127.0.0.1");
     ASSERT_GT(port, 0);
-    client = std::make_shared<httplib::Client>("127.0.0.1", port);
+    client = std::make_shared<httplib::ClientImpl>("127.0.0.1", port);
     thread = std::thread([this] { server.listen_after_bind(); });
   }
   void TearDown() override {
@@ -152,7 +156,7 @@ class FleetGitHubTransport : public ::testing::Test {
     if (thread.joinable()) thread.join();
   }
   httplib::Server server;
-  std::shared_ptr<httplib::Client> client;
+  std::shared_ptr<httplib::ClientImpl> client;
   std::thread thread;
 };
 
@@ -210,4 +214,169 @@ TEST(FleetGitHubConfiguration, ExplicitCompletePrivateConfigurationAndAuthAreReq
   EXPECT_THROW(configure_fleet_intake(config(), "invalid\nheader", true), IntakeError);
   EXPECT_NE(configure_fleet_intake(config(), "fixture-credential", true), nullptr);
 }
+// A controlled transport boundary: the real pinned serializer receives the
+// same retry callback twice. No DNS, TLS failure, or external service is used.
+class SerializedStream final : public httplib::Stream {
+ public:
+  SerializedStream(std::string& written, std::string response)
+      : written_(written), response_(std::move(response)) {}
+  bool is_readable() const override { return true; }
+  bool is_writable() const override { return true; }
+  ssize_t read(char* data, size_t size) override {
+    const auto count = std::min(size, response_.size() - offset_);
+    response_.copy(data, count, offset_);
+    offset_ += count;
+    return static_cast<ssize_t>(count);
+  }
+  ssize_t write(const char* data, size_t size) override {
+    written_.append(data, size);
+    return static_cast<ssize_t>(size);
+  }
+  void get_remote_ip_and_port(std::string& ip, int& port) const override {
+    ip = "127.0.0.1";
+    port = 1;
+  }
+  void get_local_ip_and_port(std::string& ip, int& port) const override {
+    ip = "127.0.0.1";
+    port = 2;
+  }
+  socket_t socket() const override { return INVALID_SOCKET; }
+
+ private:
+  std::string& written_;
+  std::string response_;
+  size_t offset_ = 0;
+};
+
+class SerializerRetryClient final : public httplib::ClientImpl {
+ public:
+  SerializerRetryClient() : ClientImpl("fixture.invalid", 443) {}
+  ~SerializerRetryClient() override {
+    for (const auto peer : peers_) close(peer);
+  }
+  std::vector<std::string> transmissions;
+  bool retry_after_lost_response = true;
+
+ protected:
+  bool create_and_connect_socket(Socket& socket, httplib::Error& error) override {
+    std::array<int, 2> pair{};
+    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, pair.data()) != 0) {
+      error = httplib::Error::Connection;
+      return false;
+    }
+    socket.sock = pair[0];
+    peers_.push_back(pair[1]);
+    return true;
+  }
+
+ private:
+  bool process_socket(const Socket&, std::function<bool(httplib::Stream&)> callback) override {
+    const std::string response =
+        "HTTP/1.1 201 Created\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}";
+    transmissions.emplace_back();
+    SerializedStream first(transmissions.back(), retry_after_lost_response ? "" : response);
+    const auto result = callback(first);
+    if (!retry_after_lost_response) return result;
+    EXPECT_FALSE(result) << "The fixture must lose the first response after serialization";
+    transmissions.emplace_back();
+    SerializedStream second(transmissions.back(), response);
+    return callback(second);
+  }
+  std::vector<int> peers_;
+};
+
+class FleetGitHubReplay : public ::testing::TestWithParam<std::string> {};
+
+TEST_P(FleetGitHubReplay, LibraryRetryCannotTransmitSecondMutation) {
+  auto client = std::make_shared<SerializerRetryClient>();
+  const auto request = github_intake_request("fixture-credential", client);
+  EXPECT_THROW(request(GetParam(), "/repos/homeric/work/issues", {{"title", "Publishable"}}),
+               IntakeError);
+  ASSERT_EQ(client->transmissions.size(), 2u);
+  EXPECT_TRUE(client->transmissions[0].starts_with(GetParam() + " /repos/homeric/work/issues "));
+  EXPECT_NE(client->transmissions[0].find("Authorization: Bearer fixture-credential\r\n"),
+            std::string::npos);
+  EXPECT_TRUE(client->transmissions[0].ends_with("{\"title\":\"Publishable\"}"));
+  EXPECT_TRUE(client->transmissions[1].empty()) << "No retried request bytes may leave the buffer";
+  EXPECT_EQ(client->is_socket_open(), 0u);
+}
+
+INSTANTIATE_TEST_SUITE_P(Mutations, FleetGitHubReplay, ::testing::Values("POST", "PUT"));
+
+TEST(FleetGitHubTransportContract, ClientCanSendIndependentRequestAfterReplayException) {
+  auto client = std::make_shared<SerializerRetryClient>();
+  const auto request = github_intake_request("fixture-credential", client);
+  EXPECT_THROW(request("POST", "/repos/homeric/work/issues", {{"title", "First"}}), IntakeError);
+  EXPECT_EQ(client->is_socket_open(), 0u);
+  client->retry_after_lost_response = false;
+  EXPECT_EQ(request("GET", "/repos/private/state", nullptr).status, 201);
+  ASSERT_EQ(client->transmissions.size(), 3u);
+  EXPECT_TRUE(client->transmissions[1].empty());
+  EXPECT_TRUE(client->transmissions[2].starts_with("GET /repos/private/state "));
+  EXPECT_EQ(client->is_socket_open(), 0u);
+}
+
+class SerializedIntakeRepository final : public IntakeRepository {
+ public:
+  explicit SerializedIntakeRepository(std::shared_ptr<SerializerRetryClient> client)
+      : client_(std::move(client)),
+        github_(config(), github_intake_request("fixture-credential", client_)) {}
+  std::optional<IntakeRecord> read(const std::string&) override { return record; }
+  IntakeRecord replace(const std::string&, const std::string& expected,
+                       const json& document) override {
+    if (expected != (record ? record->sha : "")) throw IntakeError("fixture_conflict", 409);
+    record = IntakeRecord{document, std::to_string(++writes_)};
+    return *record;
+  }
+  std::vector<json> issues(const std::string& repo) override {
+    std::vector<json> result;
+    for (const auto& transmission : client_->transmissions) {
+      if (transmission.empty()) continue;
+      const auto separator = transmission.find("\r\n\r\n");
+      if (separator == std::string::npos) throw IntakeError("fixture_incomplete_request", 503);
+      auto issue = json::parse(transmission.substr(separator + 4));
+      issue["number"] = 42;
+      issue["html_url"] = "https://github.com/" + repo + "/issues/42";
+      result.push_back(std::move(issue));
+    }
+    return result;
+  }
+  json create_issue(const std::string& repo, const std::string& title,
+                    const std::string& body) override {
+    EXPECT_TRUE(record.has_value());
+    if (!record || record->document["phase"] != "creating")
+      throw IntakeError("fixture_missing_creation_intent", 503);
+    return github_.create_issue(repo, title, body);
+  }
+  std::optional<IntakeRecord> record;
+
+ private:
+  std::shared_ptr<SerializerRetryClient> client_;
+  GitHubIntakeRepository github_;
+  int writes_ = 0;
+};
+
+TEST(FleetGitHubTransportContract, UncertainTransmissionRetainsIntentAndReconcilesWithoutReplay) {
+  auto client = std::make_shared<SerializerRetryClient>();
+  auto repository = std::make_shared<SerializedIntakeRepository>(client);
+  const json input{{"schema", "hi/nestor/intake-request/v1"},
+                   {"intakeId", "reviewed-idea-1"},
+                   {"workRepository", "homeric/work"},
+                   {"title", "Publishable requirement"},
+                   {"body", "Publishable content"}};
+  FleetIntake first(repository);
+  EXPECT_THROW(first.submit(input), IntakeError);
+  ASSERT_TRUE(repository->record);
+  EXPECT_EQ(repository->record->document["phase"], "creating");
+  ASSERT_EQ(client->transmissions.size(), 2u);
+  EXPECT_TRUE(client->transmissions[1].empty());
+  FleetIntake restarted(repository);
+  const auto reconciled = restarted.submit(input);
+  EXPECT_EQ(reconciled["phase"], "created");
+  EXPECT_EQ(reconciled["issue"]["number"], 42);
+  EXPECT_EQ(client->transmissions.size(), 2u);
+  EXPECT_EQ(restarted.submit(input), reconciled);
+  EXPECT_EQ(client->transmissions.size(), 2u);
+}
+
 }  // namespace nestor::test

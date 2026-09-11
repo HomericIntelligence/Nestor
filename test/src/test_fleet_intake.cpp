@@ -60,7 +60,7 @@ class FixtureIntakeRepository final : public IntakeRepository {
   int write_attempts = 0;
   int fail_write_number = 0;
   int cas_conflicts = 0;
-  std::barrier<>* read_barrier = nullptr;
+  std::shared_ptr<std::barrier<>> read_barrier;
   std::string url_repo;
   bool fail_write = false;
   bool create_commits = true;
@@ -134,8 +134,7 @@ TEST(FleetIntake, ConcurrentWritersCreateOneIssueAtMost) {
   ASSERT_TRUE(repo->record);
   ASSERT_EQ(repo->record->document["phase"], "prepared");
   repo->fail_write_number = 0;
-  std::barrier ready(2);
-  repo->read_barrier = &ready;
+  repo->read_barrier = std::make_shared<std::barrier<>>(2);
   auto call = [&] {
     try {
       FleetIntake intake(repo);

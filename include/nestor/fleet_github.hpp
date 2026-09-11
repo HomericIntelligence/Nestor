@@ -5,7 +5,7 @@
 #include <functional>
 
 namespace httplib {
-class Client;
+class ClientImpl;
 }
 
 namespace nestor {
@@ -25,7 +25,7 @@ using IntakeHttpRequest =
 // Production uses verified HTTPS to api.github.com. A supplied client is a
 // trusted transport seam for controlled local tests, never an HTTP API input.
 IntakeHttpRequest github_intake_request(const std::string& token,
-                                        std::shared_ptr<httplib::Client> client = nullptr);
+                                        std::shared_ptr<httplib::ClientImpl> client = nullptr);
 std::unique_ptr<FleetIntake> configure_fleet_intake(const GitHubIntakeConfig& config,
                                                     const std::string& token,
                                                     bool required_authentication);

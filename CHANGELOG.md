@@ -9,6 +9,12 @@ The release process is documented in `docs/RELEASING.md`.
 
 ## [Unreleased]
 
+### Fixed
+
+- Fence GitHub intake mutations before HTTP request bytes are flushed, so an
+  internal client retry cannot repeat an issue creation. Uncertain outcomes keep
+  their durable intent and require reconciliation.
+
 ### Changed
 
 - `feat(build)`: migrate from pixi to uv for the build toolchain (Odysseus
