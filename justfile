@@ -9,6 +9,16 @@ set shell := ["bash", "-c"]
 default:
   @just --list
 
+# Focused native contracts with explicitly provisioned dependencies; no install.
+fleet-configure *args:
+  bash scripts/fleet-test.sh configure {{args}}
+
+fleet-build:
+  bash scripts/fleet-test.sh build
+
+fleet-test *args:
+  bash scripts/fleet-test.sh test {{args}}
+
 # Bootstrap: create ~/.conan2/profiles/default if it does not exist (no-op if present)
 _conan-bootstrap:
   uv run conan profile detect --exist-ok

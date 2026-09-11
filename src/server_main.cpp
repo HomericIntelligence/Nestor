@@ -1,6 +1,7 @@
 // Nestor HTTP Server — C++20
 
 #include "nestor/auth.hpp"
+#include "nestor/fleet_github.hpp"
 #include "nestor/nats_client.hpp"
 #include "nestor/rate_limiter.hpp"
 #include "nestor/routes.hpp"
@@ -82,6 +83,23 @@ int main() {
   auto auth_cfg = nestor::load_auth_config_from_env();
   if (!auth_cfg) {
     std::cerr << "NESTOR_AUTH_TOKEN is not set (required in auth mode 'required')\n";
+    return 1;
+  }
+
+  // Fleet configuration is explicit and must fail before broker attachment.
+  // Construction validates configuration only; requests verify the private
+  // GitHub namespace and durable records before an issue can be created.
+  const auto environment = [](const char* name) {
+    const char* value = std::getenv(name);
+    return value != nullptr ? std::string(value) : std::string{};
+  };
+  std::unique_ptr<nestor::FleetIntake> intake;
+  try {
+    intake = nestor::configure_fleet_intake(
+        {environment("NESTOR_FLEET_STATE_REPOSITORY"), environment("NESTOR_FLEET_STATE_BRANCH")},
+        environment("GITHUB_TOKEN"), auth_cfg->mode == nestor::AuthMode::Required);
+  } catch (const nestor::IntakeError& error) {
+    std::cerr << "[main] Fleet intake configuration rejected: " << error.what() << "\n";
     return 1;
   }
 
@@ -191,7 +209,7 @@ int main() {
     std::signal(SIGTERM, signal_handler);
 
     nestor::install_auth_middleware(*server, *auth_cfg);
-    nestor::register_routes(*server, store, nats, limiter);
+    nestor::register_routes(*server, store, nats, limiter, intake.get());
 
     std::cout << "Routes registered. Listening...\n";
     if (!server->listen(host, port)) {
@@ -210,7 +228,7 @@ int main() {
     std::signal(SIGTERM, signal_handler);
 
     nestor::install_auth_middleware(*server, *auth_cfg);
-    nestor::register_routes(*server, store, nats, limiter);
+    nestor::register_routes(*server, store, nats, limiter, intake.get());
 
     std::cout << "Routes registered. Listening...\n";
     if (!server->listen(host, port)) {

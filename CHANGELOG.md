@@ -21,6 +21,12 @@ The release process is documented in `docs/RELEASING.md`.
 
 ### Added
 
+- Optional Fleet intake bootstrap with authenticated HTTP routes, private GitHub
+  Contents metadata, confirmed SHA transitions, one issue creation attempt, and
+  exact open/closed issue reconciliation after an uncertain response. Includes
+  controlled transport/concurrency tests and a proposed storage ADR; research
+  execution and real GitHub admission remain separate acceptance gates.
+
 - `AGENTS.md` documenting multi-agent coordination protocols.
 - `docs/data-retention.md` describing the in-memory retention policy.
 - `docs/privacy.md` describing privacy and GDPR considerations.

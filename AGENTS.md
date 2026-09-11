@@ -97,6 +97,25 @@ for audit trail purposes, carrying `{research_id, topic, has_summary, result_cou
 
 ## Agent role boundaries
 
+### Explicit Fleet intake bootstrap
+
+`POST /v1/research/intakes` and `GET /v1/research/intakes/{intakeId}` implement
+the versioned `hi/nestor/intake-request/v1` and `hi/nestor/intake/v1` contracts.
+See [Fleet intake](docs/fleet-intake.md) for exact fields, configuration, errors,
+and the [proposed storage decision](docs/adr/001-fleet-intake-bootstrap.md).
+
+Nestor owns only intake identity, request digests, creation intent, and issue
+receipts in a configured private GitHub state repository. Publishable requirements
+belong in the work issue; private interviews and credentials must not enter Git
+metadata. The confirmed Contents SHA transition grants one creation attempt.
+Uncertain attempts require reconciliation, never a timeout takeover or memory
+fallback. No Fleet research dispatch or reviewed epic promotion is implied by a
+`created` intake. Telemachy's registration and Agamemnon's graph/claim/completion
+authorities remain unchanged. The legacy `hi.research.*` contract above applies
+to the existing research endpoint.
+
+### Component ownership
+
 | Agent | Owns | Reads from Nestor |
 | --- | --- | --- |
 | ProjectAgamemnon | planning, dispatch | `hi.research.*` |
