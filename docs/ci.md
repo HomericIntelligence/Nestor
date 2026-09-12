@@ -69,6 +69,8 @@ runs only when `CONAN_AUDIT_PROVIDER_TOKEN` is configured; otherwise the runner
 reports the omitted audit. A successful advisory scan does not mean that it
 found no vulnerabilities or secrets. The historical workflow comment describing
 strict Gitleaks enforcement does not match the executed scanner policy.
+The generated root `gitleaks.sarif` remains available to the hosted artifact
+upload and is ignored by Git. Other SARIF paths are not covered by this rule.
 
 The local aggregate is not a receipt for every hosted workflow. Hosted compiler
 and sanitizer matrices, coverage, Markdown and repository policy checks,

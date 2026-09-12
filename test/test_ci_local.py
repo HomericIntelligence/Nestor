@@ -62,6 +62,8 @@ if name == 'engine':
     sys.exit(subprocess.run(command, cwd=root, check=False).returncode)
 if name == config.get('fail_tool'):
     sys.exit(19)
+if name == 'gitleaks' and config.get('write_scanner_report'):
+    pathlib.Path(args[args.index('--report-path') + 1]).write_text('controlled scanner report\n')
 if name == 'cmake' and config.get('remove_release') and '--build' in args:
     shutil.rmtree(root / 'build/release')
 if name == 'cmake' and config.get('fail_build') and '--build' in args:
@@ -233,6 +235,49 @@ class LocalCIContract(unittest.TestCase):
             "HIGH,CRITICAL", next(call for call in calls if call[0] == "trivy")
         )
         self.assertFalse(any(call[:3] == ["conan", "audit", "scan"] for call in calls))
+
+    def test_secrets_report_retains_hosted_path_without_source_changes(self) -> None:
+        shutil.copy2(ROOT / ".gitignore", self.root / ".gitignore")
+        git_environment = {
+            "PATH": os.environ.get("PATH", ""),
+            "HOME": str(self.root / "home"),
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_CONFIG_GLOBAL": os.devnull,
+        }
+        subprocess.run(
+            ["git", "init", "--quiet", str(self.root)],
+            env=git_environment,
+            check=True,
+            timeout=5,
+        )
+        (self.root / "src/gitleaks.sarif").write_text("unrelated file\n")
+        for configured in (False, True):
+            with self.subTest(configured=configured):
+                if configured:
+                    (self.root / ".gitleaks.toml").write_text("title = 'fixture'\n")
+                code, _, output = self.run_ci("secrets", write_scanner_report=True)
+                self.assertEqual(code, 0, output)
+                self.assertEqual(
+                    (self.root / "gitleaks.sarif").read_text(),
+                    "controlled scanner report\n",
+                )
+                ignored = subprocess.run(
+                    ["git", "check-ignore", "--quiet", "gitleaks.sarif"],
+                    cwd=self.root,
+                    env=git_environment,
+                    check=False,
+                    timeout=5,
+                )
+                self.assertEqual(ignored.returncode, 0)
+                status = subprocess.check_output(
+                    ["git", "status", "--porcelain", "--untracked-files=all"],
+                    cwd=self.root,
+                    env=git_environment,
+                    text=True,
+                    timeout=5,
+                )
+                self.assertNotIn("?? gitleaks.sarif\n", status)
+                self.assertIn("?? src/gitleaks.sarif\n", status)
 
 
 if __name__ == "__main__":
