@@ -140,3 +140,8 @@ podman run --rm -p 8080:8080 \
 ## License
 
 MIT — see `LICENSE`.
+
+## Local CI
+
+See the [local CI execution contract](docs/ci.md) for native image builds,
+required local selections, scanner policy, and the separate hosted gates.

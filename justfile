@@ -133,3 +133,7 @@ ci-actionlint:
 # Full podman-first CI suite
 ci-all:
   ./scripts/run_ci_local.sh all
+
+# Controlled launcher/native-tool contracts; no engine, compiler or network.
+ci-contract-test python='python3':
+  PYTHONDONTWRITEBYTECODE=1 {{python}} -m unittest discover -s test -p 'test_ci_*.py' -v
