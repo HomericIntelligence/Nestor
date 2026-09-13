@@ -138,8 +138,8 @@ reference and a major-version bump.
 - PRs to `main` are gated by required status checks, resolved review
   conversations, and linear history; live protection requires zero approving
   reviews and does not dismiss stale reviews. Never self-merge. Independent
-  human review of workflow changes is an external gate for the staged
-  merge-queue rollout, not a live protection rule. See
+  human review of workflow changes remains an external governance gate. The
+  merge queue is active; every required check must run on its exact queue head. See
   `docs/governance/branch-protection.md` and
   `docs/governance/merge-queue.md`.
 

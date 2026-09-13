@@ -11,6 +11,9 @@ The release process is documented in `docs/RELEASING.md`.
 
 ### Fixed
 
+- Restore all 16 required check producers for merge-group heads, retain push-only
+  image publication, and detect drift from the active queue parameters.
+
 - Fence GitHub intake mutations before HTTP request bytes are flushed, so an
   internal client retry cannot repeat an issue creation. Uncertain outcomes keep
   their durable intent and require reconciliation.

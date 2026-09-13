@@ -1,147 +1,108 @@
-# Merge queue staged rollout
+# Required checks on the merge queue
 
-Nestor's required workflows are ready to report checks for GitHub
-`merge_group` / `checks_requested` events. This readiness change does not
-activate the queue. Independent human workflow review is an external gate, and
-issue #128 stays open until an operator activates the queue and records a
-representative queued smoke result.
+Nestor's `main` branch already requires the merge queue. Its live rule uses
+`HEADGREEN`, two concurrent queue entries, at most five entries per merge, a
+60-minute check timeout, and squash merging. The minimum merge size is one,
+with a five-minute minimum-size wait. The checked-in snapshot records these
+settings; changing that snapshot does not change GitHub protection.
 
 [`configs/github/merge-queue-policy.json`](../../configs/github/merge-queue-policy.json)
-is the sole machine-readable policy authority for the exact required contexts,
-their posting workflows and protection layers, and the approved queue rule.
-The legacy `.github/branch-protection/main.json` context list is a tested
-compatibility projection, not another authority. Inspect the policy with:
+maps all 16 required contexts to their workflow and ruleset owners. The legacy
+`.github/branch-protection/main.json` context list remains a tested compatibility
+projection. Both protection layers must retain their exact context sets.
 
-```bash
-POLICY=configs/github/merge-queue-policy.json
-jq -r '.required_checks[] | [.context, .workflow, .authority] | @tsv' "${POLICY}"
-jq '.merge_queue_rule' "${POLICY}"
-```
+| Workflow | Required contexts |
+| --- | --- |
+| `_required.yml` | `branch-protection-drift`, `build`, `deps/version-sync`, `integration-tests`, `lint`, `schema-validation`, `security/dependency-scan`, `security/secrets-scan`, `test`, `unit-tests` |
+| `build-test.yml` | `All Build/Test Checks` |
+| `static-analysis.yml` | `All Static Analysis Checks` |
+| `code-coverage.yml` | `All Coverage Checks` |
+| `docker-publish.yml` | `package`, `install`, `release` |
 
-The existing `push` and `pull_request` triggers, workflow permissions, security
-jobs, and check names remain unchanged. Docker publication remains push-only;
-merge-group runs build and validate the required `package`, `install`, and
-`release` checks without logging into GHCR or pushing an image.
+Each producer handles `merge_group` / `checks_requested` using its existing
+jobs and dependencies. The aggregate jobs reject failure, cancellation and
+skipped prerequisites. Docker login and image publication remain push-only;
+queue runs build packages, perform the install smoke, and validate the release
+without publishing. The additional `merge-queue-smoke` context cannot satisfy
+any of the 16 required names. CodeQL's separate schedule and permissions remain
+unchanged.
 
-## Post-merge activation
+## Verify and admit a reviewed PR
 
-Only Odysseus may authorize this operator step. Do not run it until this
-readiness PR is merged, a smoke PR is designated, and a human has reviewed the
-workflow and generated JSON payload.
+1. Complete the repository's current-source local CI, hosted CI and review
+   requirements. Independent human workflow review remains an external
+   governance gate; the live rules require zero approving reviews and resolved
+   conversations. Local tests and green PR-head checks do not prove queue-head
+   execution.
+2. Verify the live rules without changing them:
 
-First snapshot the complete repository ruleset, verify both protection layers
-still expose the policy's exact contexts, and generate an append-only payload:
+   ```bash
+   set -euo pipefail
+   REPO=HomericIntelligence/Nestor
+   POLICY=configs/github/merge-queue-policy.json
+   bash scripts/verify-branch-protection.sh
+   gh api "repos/${REPO}/rules/branches/main" > /tmp/nestor-queue-rules.json
+   jq -r '.required_checks[] | [.context, .workflow, .authority] | @tsv' "${POLICY}"
+   ```
 
-```bash
-set -euo pipefail
-REPO=HomericIntelligence/Nestor
-POLICY=configs/github/merge-queue-policy.json
-RULESET_NAME="$(jq -r '.activation_ruleset' "${POLICY}")"
-RULESET_ID="$(gh api "repos/${REPO}/rulesets" \
-  --jq ".[] | select(.name == \"${RULESET_NAME}\") | .id")"
-test -n "${RULESET_ID}"
+   The drift check requires exactly one effective queue rule with the complete
+   recorded parameters, plus the existing review invariants and exact required
+   contexts and ruleset identities. Missing, duplicate or changed queue rules
+   fail. Its fixture tests substitute only the external `gh` responses.
+3. Admit only the reviewed PR head through the normal queue:
 
-bash scripts/verify-branch-protection.sh
+   ```bash
+   PR_NUMBER=167  # Set to the reviewed PR.
+   PR_HEAD="$(gh pr view "${PR_NUMBER}" --repo "${REPO}" --json headRefOid --jq .headRefOid)"
+   gh pr merge "${PR_NUMBER}" --repo "${REPO}" --auto --squash \
+     --match-head-commit "${PR_HEAD}"
+   ```
 
-gh api "repos/${REPO}/rulesets/${RULESET_ID}" \
-  | jq '{name, target, enforcement, bypass_actors, conditions, rules}' \
-  > /tmp/nestor-ruleset-before.json
+4. Capture the queue entry while it exists and bind evidence to its synthetic
+   head, not the PR head:
 
-jq -e '[.rules[] | select(.type == "merge_queue")] | length == 0' \
-  /tmp/nestor-ruleset-before.json
+   ```bash
+   QUEUE_ENTRY="$(gh api graphql \
+     -f owner="${REPO%%/*}" -f name="${REPO#*/}" -F number="${PR_NUMBER}" \
+     -f query='
+       query($owner: String!, $name: String!, $number: Int!) {
+         repository(owner: $owner, name: $name) {
+           pullRequest(number: $number) {
+             mergeQueueEntry { enqueuedAt headCommit { oid } }
+           }
+         }
+       }
+     ' --jq '.data.repository.pullRequest.mergeQueueEntry')"
+   QUEUE_HEAD_SHA="$(jq -er '.headCommit.oid | select(type == "string" and length == 40)' <<<"${QUEUE_ENTRY}")"
+   gh api --method GET "repos/${REPO}/actions/runs" \
+     -f event=merge_group -f head_sha="${QUEUE_HEAD_SHA}" -f per_page=100 \
+     > /tmp/nestor-queue-runs.json
+   gh api --paginate \
+     "repos/${REPO}/commits/${QUEUE_HEAD_SHA}/check-runs?filter=latest&per_page=100" \
+     --jq '.check_runs[]' | jq -s '.' > /tmp/nestor-queue-checks.json
+   ```
 
-jq --slurpfile policy "${POLICY}" -e '
-  ([.rules[] | select(.type == "required_status_checks")
-    | .parameters.required_status_checks[].context] | sort)
-  == ([$policy[0].required_checks[]
-       | select(.authority == $policy[0].activation_ruleset)
-       | .context] | sort)
-' /tmp/nestor-ruleset-before.json
+5. Require the genuine merge-group runs and all 16 successful contexts on that
+   exact head. Inspect every workflow job, including unpinned jobs, when a run
+   fails. The following check rejects missing, duplicate, stale, skipped and
+   unsuccessful required results:
 
-jq --slurpfile policy "${POLICY}" \
-  '.rules += [$policy[0].merge_queue_rule]' \
-  /tmp/nestor-ruleset-before.json > /tmp/nestor-ruleset-with-queue.json
-```
+   ```bash
+   jq -e --arg sha "${QUEUE_HEAD_SHA}" '
+     any(.workflow_runs[]; .event == "merge_group" and .head_sha == $sha)
+   ' /tmp/nestor-queue-runs.json
+   jq --slurpfile policy "${POLICY}" --arg sha "${QUEUE_HEAD_SHA}" -e '
+     ([$policy[0].required_checks[].context] | sort) as $expected
+     | [.[] | select(.name as $name | $expected | index($name))] as $checks
+     | ([$checks[].name] | sort) == $expected
+       and all($checks[]; .head_sha == $sha and .status == "completed"
+         and .conclusion == "success")
+   ' /tmp/nestor-queue-checks.json
+   ```
 
-Review `/tmp/nestor-ruleset-before.json` and
-`/tmp/nestor-ruleset-with-queue.json` field by field. The latter may differ only
-by the appended `merge_queue` rule. After Odysseus authorizes activation:
-
-```bash
-gh api --method PUT "repos/${REPO}/rulesets/${RULESET_ID}" \
-  --input /tmp/nestor-ruleset-with-queue.json
-
-gh api "repos/${REPO}/rulesets/${RULESET_ID}" \
-  | jq --slurpfile policy "${POLICY}" -e '
-      [.rules[] | select(.type == "merge_queue")]
-      == [$policy[0].merge_queue_rule]
-    '
-```
-
-## Queued smoke
-
-Queue the designated PR with squash, obtain that PR's queue-head SHA, and prove
-that a `merge_group` run and every policy check belong to that exact SHA. Do not
-accept a successful pull-request-head run as queue evidence.
-
-```bash
-SMOKE_PR=123  # Replace only after Odysseus designates the smoke PR.
-OWNER="${REPO%%/*}"
-NAME="${REPO#*/}"
-gh pr merge "${SMOKE_PR}" --repo "${REPO}" --auto --squash
-
-QUEUE_ENTRY="$(gh api graphql \
-  -f owner="${OWNER}" -f name="${NAME}" -F number="${SMOKE_PR}" \
-  -f query='
-    query($owner: String!, $name: String!, $number: Int!) {
-      repository(owner: $owner, name: $name) {
-        pullRequest(number: $number) {
-          mergeQueueEntry { enqueuedAt headCommit { oid } }
-        }
-      }
-    }
-  ' --jq '.data.repository.pullRequest.mergeQueueEntry')"
-ENQUEUED_AT="$(jq -r '.enqueuedAt' <<<"${QUEUE_ENTRY}")"
-QUEUE_HEAD_SHA="$(jq -r '.headCommit.oid' <<<"${QUEUE_ENTRY}")"
-test -n "${ENQUEUED_AT}" && test -n "${QUEUE_HEAD_SHA}"
-
-RUNS="$(gh api --method GET "repos/${REPO}/actions/runs" \
-  -f event=merge_group -f head_sha="${QUEUE_HEAD_SHA}" -f per_page=100)"
-jq -e --arg sha "${QUEUE_HEAD_SHA}" '
-  [.workflow_runs[] | select(.event == "merge_group" and .head_sha == $sha)]
-  | length >= 1
-' <<<"${RUNS}"
-
-EXPECTED="$(jq -c '[.required_checks[].context] | sort' "${POLICY}")"
-CHECKS="$(gh api --paginate \
-  "repos/${REPO}/commits/${QUEUE_HEAD_SHA}/check-runs?filter=latest&per_page=100" \
-  --jq '.check_runs[]' | jq -s '.')"
-EMITTED="$(jq -c --argjson expected "${EXPECTED}" '
-  [.[] | select(.name as $name | $expected | index($name)) | .name] | sort
-' <<<"${CHECKS}")"
-test "${EMITTED}" = "${EXPECTED}"
-jq -e --argjson expected "${EXPECTED}" --arg sha "${QUEUE_HEAD_SHA}" '
-  [.[] | select(.name as $name | $expected | index($name))]
-  | length == ($expected | length)
-    and all(.[]; .head_sha == $sha
-      and .status == "completed" and .conclusion == "success")
-' <<<"${CHECKS}"
-```
-
-Record the live ruleset response, merge-group run URL, exact check-run evidence,
-and queued merge result in issue #128.
-
-## Rollback
-
-If activation changes any unrelated rule or the queued smoke fails, stop and
-restore the reviewed snapshot:
-
-```bash
-gh api --method PUT "repos/${REPO}/rulesets/${RULESET_ID}" \
-  --input /tmp/nestor-ruleset-before.json
-gh api "repos/${REPO}/rulesets/${RULESET_ID}" \
-  --jq '[.rules[] | select(.type == "merge_queue")] | length'
-```
-
-The final command must print `0`; re-run the exact required-context preflight
-before resuming normal merges.
+Record the rules, source head, queue head, actual run URLs, check results and
+normal merge outcome with the PR. A trigger regression proves configuration
+readiness only. Until GitHub discovers and executes every corrected producer on
+the actual queue head, queue acceptance remains unverified. If only smoke runs
+or checks time out, retain the failure and repair workflow execution. Do not
+mirror statuses, bypass the queue, weaken required contexts, or remove its rule.
