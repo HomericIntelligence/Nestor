@@ -27,36 +27,46 @@ GOVERNANCE_DOCS = (
     REPO_ROOT / "docs" / "governance" / "merge-queue.md",
 )
 
-# merge_group is deliberately absent from every full workflow below: merge-queue
-# runs are handled exclusively by the single fast merge-queue-smoke job in
-# merge-queue-smoke.yml so a queued merge consumes one runner slot, not 16+.
+# Every live required-context producer must execute the same real closure for
+# pull requests and synthetic merge-group commits.
 REQUIRED_WORKFLOW_TRIGGERS = {
     "_required.yml": {
         "push": {"branches": ["main"]},
         "pull_request": {"branches": ["main"]},
+        "merge_group": {"types": ["checks_requested"]},
     },
     "build-test.yml": {
         "push": {"branches": ["main"]},
         "pull_request": {"branches": ["main"]},
+        "merge_group": {"types": ["checks_requested"]},
     },
     "code-coverage.yml": {
         "push": {"branches": ["main"]},
         "pull_request": {"branches": ["main"]},
+        "merge_group": {"types": ["checks_requested"]},
     },
     "docker-publish.yml": {
         "push": {"branches": ["main"], "tags": ["v*.*.*"]},
         "pull_request": {"branches": ["main"]},
+        "merge_group": {"types": ["checks_requested"]},
     },
     "static-analysis.yml": {
         "push": {"branches": ["main"]},
         "pull_request": {"branches": ["main"]},
+        "merge_group": {"types": ["checks_requested"]},
     },
 }
 
-MERGE_QUEUE_SMOKE_TRIGGERS = {
-    "merge-queue-smoke.yml": {
-        "merge_group": {"types": ["checks_requested"]},
-    },
+EXPECTED_CONCURRENCY_GROUP = (
+    "${{ github.workflow }}-${{ github.event_name }}-"
+    "${{ github.event.pull_request.number || github.sha }}"
+)
+
+ALLOWED_REQUIRED_JOB_CONDITIONS = {
+    "test": "always()",
+    "All Build/Test Checks": "always()",
+    "All Coverage Checks": "always()",
+    "All Static Analysis Checks": "always()",
 }
 
 EXPECTED_QUEUE_RULE = {
@@ -130,6 +140,25 @@ def named_step(workflow: dict[str, Any], job_id: str, step_name: str) -> dict[st
 def workflow_job_names(filename: str) -> list[str]:
     jobs = load_workflow(filename)["jobs"]
     return [job.get("name", job_id) for job_id, job in jobs.items()]
+
+
+def workflow_paths() -> list[Path]:
+    """Return every workflow file GitHub recognizes, in stable order."""
+    return sorted(
+        path for path in WORKFLOWS_DIR.iterdir() if path.suffix in {".yml", ".yaml"}
+    )
+
+
+def render_concurrency_group(
+    workflow: str,
+    event_name: str,
+    *,
+    pull_request_number: int | None = None,
+    sha: str,
+) -> str:
+    """Model the exact workflow concurrency expression for behavior tests."""
+    event_identity: int | str = pull_request_number or sha
+    return f"{workflow}-{event_name}-{event_identity}"
 
 
 def policy_contexts_by_authority() -> dict[str, list[str]]:
@@ -249,15 +278,21 @@ class MergeQueueReadinessTests(unittest.TestCase):
     def test_policy_contexts_exist_once_in_their_declared_workflows(self) -> None:
         required_checks = load_policy()["required_checks"]
         contexts = [item["context"] for item in required_checks]
-        self.assertEqual(len(contexts), len(set(contexts)), "policy contexts must be unique")
+        self.assertEqual(
+            len(contexts), len(set(contexts)), "policy contexts must be unique"
+        )
 
-        workflows = {path.name for path in WORKFLOWS_DIR.glob("*.yml")}
+        workflows = {path.name for path in workflow_paths()}
         emitted_by_workflow = {
             workflow: workflow_job_names(workflow) for workflow in workflows
         }
         for item in required_checks:
             with self.subTest(context=item["context"], workflow=item["workflow"]):
                 self.assertIn(item["context"], emitted_by_workflow[item["workflow"]])
+                self.assertEqual(
+                    emitted_by_workflow[item["workflow"]].count(item["context"]),
+                    1,
+                )
                 owners = [
                     workflow
                     for workflow, emitted in emitted_by_workflow.items()
@@ -313,18 +348,75 @@ class MergeQueueReadinessTests(unittest.TestCase):
             with self.subTest(workflow=filename):
                 self.assertEqual(on_block(load_workflow(filename)), expected)
 
-    def test_merge_queue_smoke_workflow_has_exact_trigger_contract(self) -> None:
-        for filename, expected in MERGE_QUEUE_SMOKE_TRIGGERS.items():
+    def test_required_contexts_have_equal_pr_and_merge_group_reachability(self) -> None:
+        required_checks = load_policy()["required_checks"]
+        contexts_by_event: dict[str, set[str]] = {
+            "pull_request": set(),
+            "merge_group": set(),
+        }
+
+        for item in required_checks:
+            workflow = load_workflow(item["workflow"])
+            job = next(
+                candidate
+                for candidate in workflow["jobs"].values()
+                if candidate.get("name") == item["context"]
+            )
+            condition = str(job.get("if", ""))
+            self.assertEqual(
+                condition,
+                ALLOWED_REQUIRED_JOB_CONDITIONS.get(item["context"], ""),
+            )
+            for event_name in contexts_by_event:
+                self.assertIn(event_name, on_block(workflow))
+                contexts_by_event[event_name].add(item["context"])
+
+        expected = {item["context"] for item in required_checks}
+        self.assertEqual(contexts_by_event["pull_request"], expected)
+        self.assertEqual(contexts_by_event["merge_group"], expected)
+
+    def test_required_workflow_concurrency_is_event_and_identity_safe(self) -> None:
+        for filename in REQUIRED_WORKFLOW_TRIGGERS:
             with self.subTest(workflow=filename):
-                workflow = load_workflow(filename)
-                self.assertEqual(on_block(workflow), expected)
-                self.assertEqual(list(workflow["jobs"]), ["merge-queue-smoke"])
-                self.assertEqual(
-                    workflow["jobs"]["merge-queue-smoke"]["name"], "merge-queue-smoke"
-                )
-                self.assertEqual(
-                    workflow["jobs"]["merge-queue-smoke"]["timeout-minutes"], 5
-                )
+                concurrency = load_workflow(filename).get("concurrency")
+                self.assertIsInstance(concurrency, dict)
+                self.assertEqual(concurrency["group"], EXPECTED_CONCURRENCY_GROUP)
+                self.assertTrue(concurrency["cancel-in-progress"])
+
+        first = render_concurrency_group(
+            "Required Checks",
+            "pull_request",
+            pull_request_number=101,
+            sha="same-head-sha",
+        )
+        second = render_concurrency_group(
+            "Required Checks",
+            "pull_request",
+            pull_request_number=202,
+            sha="same-head-sha",
+        )
+        stale = render_concurrency_group(
+            "Required Checks",
+            "pull_request",
+            pull_request_number=101,
+            sha="new-head-sha",
+        )
+        queued = render_concurrency_group(
+            "Required Checks",
+            "merge_group",
+            sha="synthetic-sha",
+        )
+        self.assertNotEqual(first, second, "unrelated fork PRs must not cancel")
+        self.assertEqual(first, stale, "new runs of one PR should cancel stale runs")
+        self.assertNotEqual(first, queued, "PR and merge-group runs must not cancel")
+
+    def test_smoke_only_merge_queue_carriers_are_absent(self) -> None:
+        for path in workflow_paths():
+            with self.subTest(workflow=path.name):
+                text = path.read_text()
+                self.assertNotIn("merge-queue-smoke", text)
+                self.assertNotEqual(path.name, "merge-queue-smoke.yml")
+                self.assertNotEqual(path.name, "merge-queue-smoke.yaml")
 
     def test_codeql_schedule_and_security_permissions_remain_unchanged(self) -> None:
         workflow = load_workflow("codeql.yml")
@@ -409,11 +501,15 @@ class MergeQueueReadinessTests(unittest.TestCase):
 
         self.assertEqual(login["if"], "github.event_name == 'push'")
         self.assertEqual(publish["with"]["push"], "${{ github.event_name == 'push' }}")
-        self.assertEqual(workflow["permissions"], {"contents": "read", "packages": "write"})
+        self.assertEqual(
+            workflow["permissions"], {"contents": "read", "packages": "write"}
+        )
 
     def test_required_schema_gate_executes_this_regression_suite(self) -> None:
         workflow = load_workflow("_required.yml")
-        schema_step = named_step(workflow, "schema-validation", "Validate workflow schemas")
+        schema_step = named_step(
+            workflow, "schema-validation", "Validate workflow schemas"
+        )
         step = named_step(workflow, "schema-validation", "Test merge-queue readiness")
         # uv.lock records each dependency as a `[[package]]` TOML block; read the
         # PyYAML block's `version` field (the canonical uv pin) rather than parsing
