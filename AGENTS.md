@@ -97,6 +97,25 @@ for audit trail purposes, carrying `{research_id, topic, has_summary, result_cou
 
 ## Agent role boundaries
 
+### Explicit Fleet intake bootstrap
+
+`POST /v1/research/intakes` and `GET /v1/research/intakes/{intakeId}` implement
+the versioned `hi/nestor/intake-request/v1` and `hi/nestor/intake/v1` contracts.
+See [Fleet intake](docs/fleet-intake.md) for exact fields, configuration, errors,
+and the [proposed storage decision](docs/adr/001-fleet-intake-bootstrap.md).
+
+Nestor owns only intake identity, request digests, creation intent, and issue
+receipts in a configured private GitHub state repository. Publishable requirements
+belong in the work issue; private interviews and credentials must not enter Git
+metadata. The confirmed Contents SHA transition grants one creation attempt.
+Uncertain attempts require reconciliation, never a timeout takeover or memory
+fallback. No Fleet research dispatch or reviewed epic promotion is implied by a
+`created` intake. Telemachy's registration and Agamemnon's graph/claim/completion
+authorities remain unchanged. The legacy `hi.research.*` contract above applies
+to the existing research endpoint.
+
+### Component ownership
+
 | Agent | Owns | Reads from Nestor |
 | --- | --- | --- |
 | ProjectAgamemnon | planning, dispatch | `hi.research.*` |
@@ -119,8 +138,8 @@ reference and a major-version bump.
 - PRs to `main` are gated by required status checks, resolved review
   conversations, and linear history; live protection requires zero approving
   reviews and does not dismiss stale reviews. Never self-merge. Independent
-  human review of workflow changes is an external gate for the staged
-  merge-queue rollout, not a live protection rule. See
+  human review of workflow changes remains an external governance gate. The
+  merge queue is active; every required check must run on its exact queue head. See
   `docs/governance/branch-protection.md` and
   `docs/governance/merge-queue.md`.
 
@@ -130,13 +149,13 @@ The architecture above follows a small set of design principles inherited from
 **ProjectOdyssey**, applied to a native C++ agent:
 
 - **Hard guarantees over convenience (KISS).** The server core is C++ with
-  `-Werror`, deterministic Conan/pixi builds, and explicit failure modes — a
+  `-Werror`, deterministic Conan/uv builds, and explicit failure modes — a
   compile-time guarantee beats a runtime check.
 - **Fail closed (POLA).** TLS material, path handling, and untrusted input
   default to rejection; validation happens at the boundary, once
   (`src/tls_config.cpp`), not per call site.
 - **Minimal surface (YAGNI).** Dependencies are added only when a protocol
-  requirement forces them; the NATS and TLS integrations are the full scope.
+  requirement forces them.
 - **One responsibility per component (DRY / boundaries).** Research logic,
   transport, and configuration are separable modules with single-owner
   responsibility.

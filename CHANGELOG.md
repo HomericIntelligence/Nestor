@@ -9,6 +9,15 @@ The release process is documented in `docs/RELEASING.md`.
 
 ## [Unreleased]
 
+### Fixed
+
+- Restore all 16 required check producers for merge-group heads, retain push-only
+  image publication, and detect drift from the active queue parameters.
+
+- Fence GitHub intake mutations before HTTP request bytes are flushed, so an
+  internal client retry cannot repeat an issue creation. Uncertain outcomes keep
+  their durable intent and require reconciliation.
+
 ### Changed
 
 - `feat(build)`: migrate from pixi to uv for the build toolchain (Odysseus
@@ -20,6 +29,12 @@ The release process is documented in `docs/RELEASING.md`.
   Dockerfile builder pulls uv via a pinned `COPY --from` named stage.
 
 ### Added
+
+- Optional Fleet intake bootstrap with authenticated HTTP routes, private GitHub
+  Contents metadata, confirmed SHA transitions, one issue creation attempt, and
+  exact open/closed issue reconciliation after an uncertain response. Includes
+  controlled transport/concurrency tests and a proposed storage ADR; research
+  execution and real GitHub admission remain separate acceptance gates.
 
 - `AGENTS.md` documenting multi-agent coordination protocols.
 - `docs/data-retention.md` describing the in-memory retention policy.

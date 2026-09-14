@@ -29,8 +29,9 @@ The eviction counter is exposed via `GET /v1/research/stats` as the `expired`
 field, enabling operators to observe how many pending items have been silently
 dropped due to TTL.
 
-There is currently **no on-disk persistence**; restarting the Nestor
-process clears all stored research items regardless of the above bounds.
+The legacy store has no on-disk persistence; restarting the Nestor process clears
+its research items regardless of the above bounds. Fleet intake uses the separate
+durable storage described below.
 
 ## Deletion
 
@@ -43,9 +44,23 @@ self-service deletion paths exist:
   expires — operator restart is no longer the only deletion path.
 
 For immediate deletion of a pending item, users must request operator
-intervention. A user-facing deletion endpoint is tracked in the issue backlog
-and will be implemented before Nestor stores user data on persistent
-media.
+intervention. A user-facing deletion endpoint is tracked in the issue backlog.
+
+## Fleet intake retention
+
+The opt-in [Fleet intake API](fleet-intake.md) persists metadata in a private
+GitHub state repository and publishable requirements in a work issue. Both survive
+Nestor restart. Legacy TTL, completion erasure, and memory capacity settings do
+not apply. There is no automatic TTL, deletion endpoint, or renewal of an
+uncertain creation attempt.
+
+The state repository's Git history retains previous record revisions. Removing
+the current file or closing the work issue does not erase those revisions and
+must not be used to authorize another issue creation. Operators must manage
+repository/issue retention and any erasure separately, including prior revisions
+and downstream copies, while preserving enough reconciliation evidence to avoid
+duplicate work. Private interviews and conversation transcripts must not be
+submitted as publishable requirements or stored in these metadata records.
 
 ## Data subject rights
 

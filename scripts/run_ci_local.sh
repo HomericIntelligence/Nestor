@@ -116,6 +116,7 @@ run_in_container() {
     # path (/tmp) is always writable. The optional host mount below still
     # provides a cold-cache speedup when the host dir happens to be writable.
     engine_flags+=(-e CONAN_HOME=/tmp/conan2)
+    engine_flags+=(-e CMAKE_BUILD_PARALLEL_LEVEL="${CMAKE_BUILD_PARALLEL_LEVEL:-2}")
     if [ -n "${CONAN_HOME_HOST:-}" ]; then
         engine_flags+=(-v "${CONAN_HOME_HOST}:/home/ci/.conan2:Z")
     fi
@@ -143,9 +144,10 @@ run_in_container() {
 # ============================================================================
 
 run_lint() {
-    log_step "lint: clang-format + yamllint + clang-tidy debug build"
+    log_step "lint: CI launcher contracts + clang-format + yamllint + clang-tidy debug build"
     run_in_container bash -c '
         set -euo pipefail
+        PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s test -p "test_ci_*.py" -v
         mapfile -t files < <(find src include -type f \( -name "*.cpp" -o -name "*.hpp" \))
         if [ "${#files[@]}" -gt 0 ]; then
             clang-format --dry-run --Werror "${files[@]}"
@@ -168,12 +170,8 @@ run_lint() {
 
 run_build_release() {
     # Shared: conan install (Release) + configure + build. Emits build/release.
-    # Skipped when a configured release build tree already exists so the `all`
-    # subset does not rebuild between the unit/integration/concurrency phases.
-    if [ -f "${PROJECT_ROOT}/build/release/CMakeCache.txt" ]; then
-        log_info "build/release already configured — skipping rebuild"
-        return 0
-    fi
+    # Existing generated files are incremental inputs, never proof that the
+    # current source has been configured and built successfully.
     run_in_container bash -c '
         set -euo pipefail
         conan profile detect --exist-ok
@@ -189,11 +187,7 @@ run_unit() {
     run_in_container bash -c '
         set -euo pipefail
         cd build/release
-        if ctest --output-on-failure -L unit 2>/dev/null; then
-            echo "Unit tests (labelled) passed"
-        else
-            ctest --output-on-failure
-        fi
+        ctest --output-on-failure -L unit --no-tests=error
     '
 }
 
@@ -203,11 +197,7 @@ run_integration() {
     run_in_container bash -c '
         set -euo pipefail
         cd build/release
-        if ctest --output-on-failure -L integration 2>/dev/null; then
-            echo "Integration tests (labelled) passed"
-        else
-            ctest --output-on-failure
-        fi
+        ctest --output-on-failure -L integration --no-tests=error
     '
 }
 
@@ -216,102 +206,124 @@ run_concurrency() {
     run_build_release
     run_in_container bash -c '
         set -euo pipefail
+        cd build/release
         for i in $(seq 5); do
             echo "--- concurrency run $i/5 ---"
-            cd build/release && ctest --output-on-failure -L concurrency
-            cd ../..
+            ctest --output-on-failure -L concurrency --no-tests=error
         done
     '
 }
 
-run_nats() {
-    log_step "nats-integration-tests: build + live-NATS ctest (podman broker)"
+run_nats() (
+    log_step "nats-integration-tests: build + private live-NATS ctest"
     run_build_release
 
-    # Start the broker exactly as `docker compose up` would name/label it, so
-    # the compose-over-podman-socket path can stop/start it mid-test. This
-    # mirrors the nats-integration-tests CI job, where the broker is a docker
-    # compose sidecar controlled through a mounted socket.
-    local broker
-    broker="$("${CONTAINER_ENGINE}" run -d --name nestor-nats-test-nats-1 \
-        --label com.docker.compose.project=nestor-nats-test \
-        --label com.docker.compose.project.working_dir=/workspace/test/docker \
-        --label com.docker.compose.project.config_files=/workspace/test/docker/docker-compose.nats.yml \
-        --label com.docker.compose.service=nats \
-        --label com.docker.compose.container-number=1 \
-        -p 4222:4222 \
-        -p 8222:8222 \
-        nats:2.12-alpine -js -m 8222)"
-    log_info "NATS broker container: ${broker}"
+    # Run on the Linux engine host. Private cidfiles bind cleanup to containers
+    # created by this invocation, including a client failure after creation.
+    local state_dir broker endpoint monitor socket_path
+    state_dir="$(mktemp -d)"
+    cleanup_nats() {
+        local status=$? cleanup_status=0 id file
+        trap - EXIT
+        for file in "${state_dir}/test.cid" "${state_dir}/broker.cid"; do
+            if [ -s "${file}" ]; then
+                id="$(cat "${file}")"
+                if [[ "${id}" =~ ^[a-f0-9]{64}$ ]]; then
+                    if "${CONTAINER_ENGINE}" rm -f "${id}"; then
+                        :
+                    else
+                        cleanup_status=1
+                    fi
+                else
+                    log_error "Invalid owned container receipt: ${file}"
+                    cleanup_status=1
+                fi
+            fi
+        done
+        if [ "${cleanup_status}" -eq 0 ]; then
+            rm -rf -- "${state_dir}"
+        else
+            log_error "Container cleanup is uncertain; retained receipts: ${state_dir}"
+        fi
+        if [ "${status}" -eq 0 ]; then
+            exit "${cleanup_status}"
+        fi
+        exit "${status}"
+    }
+    trap cleanup_nats EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
 
-    # Wait for the broker health endpoint before running tests.
+    broker="$("${CONTAINER_ENGINE}" run -d --cidfile "${state_dir}/broker.cid" \
+        -p 127.0.0.1::4222 -p 127.0.0.1::8222 \
+        nats:2.12-alpine -js -m 8222)"
+    if [[ ! "${broker}" =~ ^[a-f0-9]{64}$ ]]; then
+        log_error "Broker creation returned no exact container identity"
+        return 1
+    fi
+    endpoint="$("${CONTAINER_ENGINE}" port "${broker}" 4222/tcp)"
+    monitor="$("${CONTAINER_ENGINE}" port "${broker}" 8222/tcp)"
+    if [[ ! "${endpoint}" =~ ^127\.0\.0\.1:[0-9]+$ ]] || \
+       [[ ! "${monitor}" =~ ^127\.0\.0\.1:[0-9]+$ ]]; then
+        log_error "Broker port allocation was not private loopback"
+        return 1
+    fi
     local healthy=0
     for _ in $(seq 1 30); do
-        if curl -fsS http://127.0.0.1:8222/healthz >/dev/null 2>&1; then
+        if curl --connect-timeout 1 --max-time 1 -fsS "http://${monitor}/healthz" >/dev/null 2>&1; then
             healthy=1
             break
         fi
         sleep 1
     done
     if [ "${healthy}" -ne 1 ]; then
-        log_error "NATS broker did not become healthy within 30s"
-        "${CONTAINER_ENGINE}" rm -f "${broker}" >/dev/null 2>&1
+        log_error "NATS broker did not become healthy within the bounded wait"
         return 1
     fi
-    log_info "NATS broker healthy"
 
-    # The CI image's docker CLI talks to the rootless podman socket (Docker-API
-    # compatible). `docker compose stop/start nats` cannot match podman-created
-    # containers (compose v2 matching relies on labels only real compose
-    # creates), so mount a small docker shim that maps the broker-bounce
-    # lifecycle verbs to direct container control — the local equivalent of
-    # CI's real docker compose sidecar.
-    local podman_sock shim
-    podman_sock="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/podman/podman.sock"
-    shim="$(mktemp)"
-    cat > "${shim}" <<'SHIM'
+    # The C++ bounce tests use compose-shaped commands. This private shim
+    # targets only the exact broker ID returned above, on the explicit socket.
+    cat > "${state_dir}/docker" <<'SHIM'
 #!/bin/bash
-# NATS broker compose shim (local podman runner only).
-# Maps `docker compose [-f file] stop|start nats` to direct lifecycle control
-# of the broker container via the Docker-API-compatible podman socket.
-if [ "$#" -ge 3 ] && [ "$1" = "compose" ] && [ "${@: -1}" = "nats" ]; then
-    for a in "$@"; do
-        case "$a" in
-            stop|start) verb="$a" ;;
-        esac
-    done
-    if [ -n "${verb:-}" ]; then
-        exec /usr/bin/docker "$verb" nestor-nats-test-nats-1
-    fi
+set -euo pipefail
+if [ "$#" -eq 5 ] && [ "$1" = compose ] && [ "$2" = -f ] && [ "$5" = nats ]; then
+    case "$4" in
+        stop|start) exec /usr/bin/docker --host unix:///var/run/docker.sock "$4" "${NESTOR_LIVE_NATS_BROKER:?}" ;;
+    esac
 fi
-exec /usr/bin/docker "$@"
+echo "Unsupported private broker lifecycle command" >&2
+exit 1
 SHIM
-    chmod 755 "${shim}"
-    local status=0
-    "${CONTAINER_ENGINE}" run --rm \
-        --userns=keep-id:uid=1000,gid=1000 \
-        --network host \
+    chmod 755 "${state_dir}/docker"
+    local engine_flags=()
+    if [ "${CONTAINER_ENGINE##*/}" = podman ]; then
+        socket_path="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/podman/podman.sock"
+        engine_flags+=(--userns=keep-id:uid=1000,gid=1000)
+    else
+        socket_path="${DOCKER_HOST:-unix:///var/run/docker.sock}"
+        if [[ "${socket_path}" != unix:///* ]]; then
+            log_error "Live NATS requires an explicit local Unix engine socket"
+            return 1
+        fi
+        socket_path="${socket_path#unix://}"
+    fi
+    # timeout bounds the client; EXIT cleanup also removes its exact container
+    # if the client disconnects while the tests remain active.
+    timeout 900s "${CONTAINER_ENGINE}" run --cidfile "${state_dir}/test.cid" \
+        "${engine_flags[@]}" --network host \
         -v "${PROJECT_ROOT}:/workspace:Z" \
-        -v "${podman_sock}:/var/run/docker.sock:Z" \
-        -v "${shim}:/usr/local/bin/docker:Z" \
-        -e NESTOR_LIVE_NATS_URL=nats://127.0.0.1:4222 \
+        -v "${socket_path}:/var/run/docker.sock:Z" \
+        -v "${state_dir}/docker:/usr/local/bin/docker:Z" \
+        -e "NESTOR_LIVE_NATS_URL=nats://${endpoint}" \
+        -e "NESTOR_LIVE_NATS_BROKER=${broker}" \
         -e NESTOR_LIVE_NATS_COMPOSE=/workspace/test/docker/docker-compose.nats.yml \
-        -w /workspace \
-        "${CI_IMAGE}" \
+        -w /workspace "${CI_IMAGE}" \
         bash -c '
             set -euo pipefail
             cd build/release
             ctest --output-on-failure -L live-nats --no-tests=error
-        ' || status=$?
-    rm -f "${shim}"
-
-    "${CONTAINER_ENGINE}" rm -f "${broker}" >/dev/null 2>&1
-    if [ "${status}" -ne 0 ]; then
-        log_error "live-NATS ctest failed (exit ${status})"
-        return 1
-    fi
-    log_info "live-NATS tests passed"
-}
+        '
+)
 
 run_security() {
     log_step "security/dependency-scan: trivy fs + conan audit"
@@ -388,7 +400,10 @@ run_step() {
     # the exit code here so the top-level script survives to report all
     # failures.
     set +e
-    "${fn}"
+    (
+        set -e
+        "${fn}"
+    )
     local rc=$?
     set -e
     if [ "${rc}" -ne 0 ]; then
@@ -447,6 +462,8 @@ case "${SUBSET}" in
         run_step "unit-tests" run_unit
         run_step "integration-tests" run_integration
         run_step "concurrency-tests" run_concurrency
+        run_step "nats-integration-tests" run_nats
+        run_step "actionlint" run_actionlint
         run_step "security/dependency-scan" run_security
         run_step "security/secrets-scan" run_secrets
         run_step "schema-validation" run_schema
