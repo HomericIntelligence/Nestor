@@ -23,9 +23,11 @@ Each producer handles `merge_group` / `checks_requested` using its existing
 jobs and dependencies. The aggregate jobs reject failure, cancellation and
 skipped prerequisites. Docker login and image publication remain push-only;
 queue runs build packages, perform the install smoke, and validate the release
-without publishing. The additional `merge-queue-smoke` context cannot satisfy
-any of the 16 required names. CodeQL's separate schedule and permissions remain
-unchanged.
+without publishing. The former `merge-queue-smoke` workflow has been removed;
+every required context must come from its normal producer. Workflow concurrency
+separates PR runs by PR number and merge-group runs by their synthetic commit,
+so unrelated PRs and queue runs do not cancel each other. CodeQL's separate
+schedule and permissions remain unchanged.
 
 ## Verify and admit a reviewed PR
 
