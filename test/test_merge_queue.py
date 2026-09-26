@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Behavioral regression tests for staged GitHub merge-queue readiness."""
+"""Behavioral regression tests for required GitHub merge-queue checks."""
 
 from __future__ import annotations
 
@@ -73,8 +73,8 @@ EXPECTED_QUEUE_RULE = {
     "type": "merge_queue",
     "parameters": {
         "check_response_timeout_minutes": 60,
-        "grouping_strategy": "ALLGREEN",
-        "max_entries_to_build": 10,
+        "grouping_strategy": "HEADGREEN",
+        "max_entries_to_build": 2,
         "max_entries_to_merge": 5,
         "merge_method": "SQUASH",
         "min_entries_to_merge": 1,
@@ -173,6 +173,7 @@ def policy_contexts_by_authority() -> dict[str, list[str]]:
 def run_drift_check(
     split: dict[str, list[str]],
     ruleset_overrides: dict[str, dict[str, Any]] | None = None,
+    queue_rules: list[dict[str, Any]] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     policy = load_policy()
     repository = policy["repository"]
@@ -180,8 +181,16 @@ def run_drift_check(
     authorities = sorted(policy_contexts_by_authority())
     ids = {authority: index + 100 for index, authority in enumerate(authorities)}
     ruleset_overrides = ruleset_overrides or {}
+    if queue_rules is None:
+        queue_rules = [{
+            **deepcopy(EXPECTED_QUEUE_RULE),
+            "ruleset_source_type": "Repository",
+            "ruleset_source": repository,
+            "ruleset_id": ids[policy["activation_ruleset"]],
+        }]
     responses: dict[str, Any] = {
         f"repos/{repository}/rules/branches/{target_branch}": [
+            *queue_rules,
             {
                 "type": "pull_request",
                 "parameters": {
@@ -310,34 +319,30 @@ class MergeQueueReadinessTests(unittest.TestCase):
     def test_policy_pins_exact_queue_rule(self) -> None:
         self.assertEqual(load_policy()["merge_queue_rule"], EXPECTED_QUEUE_RULE)
 
-    def test_policy_transform_appends_only_the_approved_queue_rule(self) -> None:
-        snapshot = {
-            "name": "homeric-main-baseline",
-            "target": "branch",
-            "enforcement": "active",
-            "rules": [{"type": "deletion"}, {"type": "required_status_checks"}],
+    def test_drift_preflight_rejects_missing_or_duplicate_queue(self) -> None:
+        for rules in ([], [EXPECTED_QUEUE_RULE, EXPECTED_QUEUE_RULE]):
+            with self.subTest(rules=rules):
+                result = run_drift_check(policy_contexts_by_authority(), queue_rules=rules)
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_drift_preflight_rejects_changed_queue_parameters(self) -> None:
+        mutations = {
+            "check_response_timeout_minutes": 30,
+            "grouping_strategy": "ALLGREEN",
+            "max_entries_to_build": 10,
+            "max_entries_to_merge": 4,
+            "merge_method": "REBASE",
+            "min_entries_to_merge": 2,
+            "min_entries_to_merge_wait_minutes": 10,
         }
-        result = subprocess.run(
-            [
-                "jq",
-                "--slurpfile",
-                "policy",
-                str(POLICY_PATH),
-                ".rules += [$policy[0].merge_queue_rule]",
-            ],
-            input=json.dumps(snapshot),
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        transformed = json.loads(result.stdout)
-        self.assertEqual(transformed["rules"][:-1], snapshot["rules"])
-        self.assertEqual(transformed["rules"][-1], load_policy()["merge_queue_rule"])
-        self.assertEqual(
-            {key: value for key, value in transformed.items() if key != "rules"},
-            {key: value for key, value in snapshot.items() if key != "rules"},
-        )
+        for field, value in mutations.items():
+            with self.subTest(field=field):
+                changed = deepcopy(EXPECTED_QUEUE_RULE)
+                changed["parameters"][field] = value
+                result = run_drift_check(
+                    policy_contexts_by_authority(), queue_rules=[changed]
+                )
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_every_required_workflow_has_exact_trigger_contract(self) -> None:
         policy_workflows = {
@@ -347,6 +352,60 @@ class MergeQueueReadinessTests(unittest.TestCase):
         for filename, expected in REQUIRED_WORKFLOW_TRIGGERS.items():
             with self.subTest(workflow=filename):
                 self.assertEqual(on_block(load_workflow(filename)), expected)
+
+    def test_required_jobs_and_prerequisites_have_no_event_skip(self) -> None:
+        for item in load_policy()["required_checks"]:
+            jobs = load_workflow(item["workflow"])["jobs"]
+            pending = [
+                job_id for job_id, job in jobs.items()
+                if job.get("name", job_id) == item["context"]
+            ]
+            self.assertEqual(len(pending), 1)
+            visited = set()
+            while pending:
+                job_id = pending.pop()
+                if job_id in visited:
+                    continue
+                visited.add(job_id)
+                with self.subTest(context=item["context"], prerequisite=job_id):
+                    job = jobs[job_id]
+                    self.assertIn(job.get("if"), (None, "always()"))
+                    self.assertNotIn("continue-on-error", job)
+                    needs = job.get("needs", [])
+                    pending.extend([needs] if isinstance(needs, str) else needs)
+
+    def test_aggregate_shells_reject_every_unsuccessful_dependency(self) -> None:
+        aggregates = {
+            "_required.yml": "test",
+            "build-test.yml": "check-all",
+            "code-coverage.yml": "check-all",
+            "static-analysis.yml": "check-all",
+        }
+        expression = re.compile(r"\$\{\{\s*needs\.([\w-]+)\.result\s*\}\}")
+        for filename, job_id in aggregates.items():
+            job = load_workflow(filename)["jobs"][job_id]
+            script = "\n".join(step["run"] for step in job["steps"] if "run" in step)
+            self.assertEqual(set(expression.findall(script)), set(job["needs"]))
+            outcomes = [{name: "success" for name in job["needs"]}]
+            for name in job["needs"]:
+                for status in ("failure", "cancelled", "skipped"):
+                    outcomes.append({**outcomes[0], name: status})
+            for results in outcomes:
+                with self.subTest(workflow=filename, results=results):
+                    rendered = expression.sub(lambda match: results[match[1]], script)
+                    self.assertNotIn("${{", rendered)
+                    result = subprocess.run(
+                        ["bash", "-c", rendered],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                        check=False,
+                    )
+                    self.assertEqual(
+                        result.returncode == 0,
+                        all(status == "success" for status in results.values()),
+                        result.stdout + result.stderr,
+                    )
 
     def test_required_contexts_have_equal_pr_and_merge_group_reachability(self) -> None:
         required_checks = load_policy()["required_checks"]

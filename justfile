@@ -9,6 +9,16 @@ set shell := ["bash", "-c"]
 default:
   @just --list
 
+# Focused native contracts with explicitly provisioned dependencies; no install.
+fleet-configure *args:
+  bash scripts/fleet-test.sh configure {{args}}
+
+fleet-build:
+  bash scripts/fleet-test.sh build
+
+fleet-test *args:
+  bash scripts/fleet-test.sh test {{args}}
+
 # Bootstrap: create ~/.conan2/profiles/default if it does not exist (no-op if present)
 _conan-bootstrap:
   uv run conan profile detect --exist-ok
@@ -123,3 +133,7 @@ ci-actionlint:
 # Full podman-first CI suite
 ci-all:
   ./scripts/run_ci_local.sh all
+
+# Controlled launcher/native-tool contracts; no engine, compiler or network.
+ci-contract-test python='python3':
+  PYTHONDONTWRITEBYTECODE=1 {{python}} -m unittest discover -s test -p 'test_ci_*.py' -v

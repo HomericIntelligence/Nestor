@@ -2,6 +2,9 @@ build/
 install/
 .cache/
 
+# Generated scanner report retained for the hosted artifact upload.
+/gitleaks.sarif
+
 # uv (ADR-018): uv.lock IS committed; only the virtualenv is ignored.
 .venv/
 *.o

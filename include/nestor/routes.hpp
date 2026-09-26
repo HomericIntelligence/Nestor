@@ -10,13 +10,15 @@
 #include "nlohmann/json.hpp"
 
 namespace nestor {
+class FleetIntake;
 
 /// Register all HTTP route handlers onto the server.
 ///
 /// @param limiter  Rate limiter constructed on the main() stack; must outlive
 ///                 server.listen(). Passed by reference; captured as pointer
 ///                 by route lambdas (see cpp-httplib-lambda-capture-ub skill).
-void register_routes(httplib::Server& server, Store& store, NatsClient& nats, RateLimiter& limiter);
+void register_routes(httplib::Server& server, Store& store, NatsClient& nats, RateLimiter& limiter,
+                     FleetIntake* intake = nullptr);
 
 // ── HMAS mesh wire helpers (Odysseus ADR-013 §7) ─────────────────────────────
 // Pure functions, exposed for unit testing.
