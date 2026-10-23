@@ -7,6 +7,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -42,6 +43,8 @@ class NatsClient {
   // On failure, a background reconnect loop starts automatically.
   bool connect();
 
+  // Stops background work and rejects new callbacks. If a research handler
+  // is already running, this call waits until that handler returns.
   void close();
   [[nodiscard]] bool is_connected() const noexcept;
 
@@ -62,7 +65,8 @@ class NatsClient {
 
   // Handler for research status messages delivered on hi.research.> (core
   // NATS subscription, not JetStream). Invoked on a nats.c delivery thread —
-  // the handler must be thread-safe and must not perform JetStream RPCs.
+  // the handler must be thread-safe and must not perform JetStream RPCs or
+  // call close(); close() waits for a handler active when shutdown begins.
   using MessageHandler =
       std::function<void(const std::string& subject, const std::string& payload)>;
 
@@ -73,27 +77,22 @@ class NatsClient {
   void set_research_status_handler(MessageHandler handler);
 
  private:
+  struct CallbackState;
+
   // ── connection state ──────────────────────────────────────────────────────
   std::string url_;
   natsOptions* opts_ = nullptr;
   natsConnection* conn_ = nullptr;
   jsCtx* js_ = nullptr;
   natsSubscription* research_sub_ = nullptr;
-
-  // Immutable after connect() (set_research_status_handler documents the
-  // before-connect contract), so the delivery-thread shim reads it unlocked.
-  MessageHandler research_handler_;
-
-  // Atomic flag; written only by callbacks, close(), and try_connect_once().
-  std::atomic<bool> connected_{false};
-
-  // Monotonically increasing; bumped on each successful (re)connect so the
-  // provisioner can detect new connection events.
-  std::atomic<std::uint64_t> generation_{0};
+  std::shared_ptr<CallbackState> callback_state_;
 
   // ── synchronisation ───────────────────────────────────────────────────────
+  // Serializes connect/close lifecycle transitions.
+  std::mutex close_mu_;
+  // Protects conn_ installation/snapshot only. Never hold it across a NATS RPC.
+  std::mutex connection_mu_;
   std::mutex state_mu_;
-  std::condition_variable_any wake_cv_;
 
   // stop_source shared between close() and provision_jetstream_locked().
   // Tokens from this source are checked inside provisioner internals.
@@ -130,22 +129,21 @@ class NatsClient {
   // holding state_mu_. Returns true on full success.
   bool provision_jetstream_locked();
 
-  // Member handlers invoked from the C callback shims below.
-  void on_disconnected();
-  void on_reconnected();
-  void on_closed();
-
   // Static C-callback shims that match natsConnectionHandler typedef:
   //   typedef void (*natsConnectionHandler)(natsConnection* nc, void* closure);
-  // Declared as static members so they have access to private handlers.
-  static void shim_disconnected(__natsConnection* nc, void* closure);
-  static void shim_reconnected(__natsConnection* nc, void* closure);
-  static void shim_closed(__natsConnection* nc, void* closure);
+  // The closure is unused; nc is the safe callback-registry key.
+  static void shim_disconnected(__natsConnection* nc, void* closure) noexcept;
+  static void shim_reconnected(__natsConnection* nc, void* closure) noexcept;
+  static void shim_closed(__natsConnection* nc, void* closure) noexcept;
 
   // Shim matching natsMsgHandler:
   //   void (*)(natsConnection*, natsSubscription*, natsMsg*, void* closure)
   static void shim_research_message(__natsConnection* nc, __natsSubscription* sub, __natsMsg* msg,
-                                    void* closure);
+                                    void* closure) noexcept;
+
+  // Invoked after the final async subscription handler returns. The closure
+  // is the nats.c-retained subscription pointer used only as a registry key.
+  static void shim_subscription_complete(void* closure) noexcept;
 
   // (Re)create the core hi.research.> subscription. Caller holds state_mu_.
   void resubscribe_research_locked();
