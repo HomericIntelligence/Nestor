@@ -22,6 +22,8 @@
 #include <chrono>
 #include <cstdlib>
 #include <functional>
+#include <future>
+#include <memory>
 #include <mutex>
 #include <random>
 #include <string>
@@ -136,15 +138,29 @@ class Recorder {
 // bounce test fails mid-way, so later tests and re-runs see a live broker.
 class BrokerRestoreGuard {
  public:
-  BrokerRestoreGuard() = default;
+  explicit BrokerRestoreGuard(std::string url) : url_(std::move(url)) {}
   BrokerRestoreGuard(const BrokerRestoreGuard&) = delete;
   BrokerRestoreGuard& operator=(const BrokerRestoreGuard&) = delete;
   ~BrokerRestoreGuard() {
     if (!compose_ctl("start")) {
       // Destructor must not throw; surface the problem in the test log.
       ADD_FAILURE() << "failed to restore NATS broker via docker compose start";
+      return;
+    }
+    if (!wait_for(
+            [this] {
+              natsConnection* probe = nullptr;
+              const natsStatus status = natsConnection_ConnectTo(&probe, url_.c_str());
+              natsConnection_Destroy(probe);
+              return status == NATS_OK;
+            },
+            60s)) {
+      ADD_FAILURE() << "restored NATS broker did not become ready within 60 seconds";
     }
   }
+
+ private:
+  std::string url_;
 };
 
 class NatsClientLiveTest : public ::testing::Test {
@@ -157,11 +173,11 @@ class NatsClientLiveTest : public ::testing::Test {
     url_ = url;
   }
 
-  // Broker-bounce tests call this first; they need docker compose control.
-  void require_compose_ctl() {
-    if (compose_file() == nullptr) {
-      GTEST_SKIP() << "NESTOR_LIVE_NATS_COMPOSE not set — broker-bounce test skipped";
-    }
+  // GTEST_SKIP() returns only from the function that invokes it, so bounce
+  // tests must perform the skip in their own test body.
+  static bool has_compose_ctl() {
+    const char* file = compose_file();
+    return file != nullptr && file[0] != '\0';
   }
 
   // Wait until the client's provisioner has created the JetStream context and
@@ -266,6 +282,99 @@ TEST_F(NatsClientLiveTest, ResearchHandlerExceptionIsCaught) {
   EXPECT_GE(throw_count.load(), 1) << "throwing message never reached the handler";
   EXPECT_FALSE(rec.has(throw_subject)) << "throwing handler unexpectedly recorded its message";
   client.close();
+}
+
+// A close callback and a subscription-delivery callback run on independent
+// nats.c threads. close() must not return while a handler that can still reach
+// NatsClient state is in flight.
+TEST_F(NatsClientLiveTest, CloseWaitsForInFlightResearchHandler) {
+  NatsClient client(url_);
+  std::promise<void> handler_entered_promise;
+  std::future<void> handler_entered = handler_entered_promise.get_future();
+  std::promise<void> release_handler_promise;
+  std::shared_future<void> release_handler = release_handler_promise.get_future().share();
+  std::atomic<bool> handler_started{false};
+  const std::string subject = "hi.research.status.blocked-" + unique_suffix();
+
+  client.set_research_status_handler(
+      [&](const std::string& received_subject, const std::string& /*payload*/) {
+        if (received_subject == subject && !handler_started.exchange(true)) {
+          handler_entered_promise.set_value();
+          release_handler.wait();
+        }
+      });
+  ASSERT_TRUE(client.connect());
+  ASSERT_TRUE(wait_provisioned(client, "hi.research.live.probe-" + unique_suffix()));
+  ASSERT_TRUE(client.publish(subject, R"({"blocked":true})"));
+  ASSERT_EQ(handler_entered.wait_for(10s), std::future_status::ready)
+      << "research handler did not enter its controlled blocked state";
+
+  std::promise<void> close_started_promise;
+  std::future<void> close_started = close_started_promise.get_future();
+  std::promise<void> close_returned_promise;
+  std::future<void> close_returned = close_returned_promise.get_future();
+  std::jthread closer([&] {
+    close_started_promise.set_value();
+    client.close();
+    close_returned_promise.set_value();
+  });
+  ASSERT_EQ(close_started.wait_for(5s), std::future_status::ready);
+  EXPECT_EQ(close_returned.wait_for(250ms), std::future_status::timeout)
+      << "close returned while the research handler still held callback-reachable state";
+
+  release_handler_promise.set_value();
+  EXPECT_EQ(close_returned.wait_for(5s), std::future_status::ready)
+      << "close did not finish after the active research handler returned";
+  closer.join();
+}
+
+// An initial connect failure starts the external reconnect thread. close()
+// must cancel and join that thread before destroying its connection options.
+TEST_F(NatsClientLiveTest, CloseStopsBackgroundReconnectBeforeReturning) {
+  NatsClient client("nats://127.0.0.1:1");
+  ASSERT_FALSE(client.connect());
+
+  std::future<void> closed = std::async(std::launch::async, [&] { client.close(); });
+  ASSERT_EQ(closed.wait_for(5s), std::future_status::ready)
+      << "close did not stop and join the background reconnect thread";
+  EXPECT_NO_THROW(closed.get());
+  EXPECT_FALSE(client.is_connected());
+}
+
+TEST_F(NatsClientLiveTest, DuplicateCloseIsIdempotent) {
+  NatsClient client(url_);
+  ASSERT_TRUE(client.connect());
+  ASSERT_TRUE(wait_provisioned(client, "hi.research.live.duplicate-close-" + unique_suffix()));
+
+  EXPECT_NO_THROW(client.close());
+  EXPECT_NO_THROW(client.close());
+  EXPECT_FALSE(client.is_connected());
+}
+
+TEST_F(NatsClientLiveTest, DestructionWithoutExplicitCloseIsSafe) {
+  auto client = std::make_unique<NatsClient>(url_);
+  ASSERT_TRUE(client->connect());
+  ASSERT_TRUE(wait_provisioned(*client, "hi.research.live.destroy-" + unique_suffix()));
+
+  EXPECT_NO_THROW(client.reset());
+}
+
+// Repeatedly close and destroy clients in one process so a callback that
+// outlives its connection registration is caught by the sanitizer (or by a
+// later iteration that reuses allocator storage).
+TEST_F(NatsClientLiveTest, RepeatedCloseAndDestructionWaitsForClosedCallback) {
+  constexpr int kIterations = 256;
+  for (int iteration = 0; iteration < kIterations; ++iteration) {
+    SCOPED_TRACE(::testing::Message() << "iteration " << iteration);
+    auto client = std::make_unique<NatsClient>(url_);
+    ASSERT_TRUE(client->connect());
+    client->publish_log("hi.research.status.close-" + unique_suffix(), "info", "close-stress",
+                        nlohmann::json::object());
+
+    ASSERT_NO_THROW(client->close());
+    ASSERT_NO_THROW(client->close());
+    ASSERT_NO_THROW(client.reset());
+  }
 }
 
 // Covers the publish_log() happy path: the structured JSON envelope reaches
@@ -398,14 +507,16 @@ TEST_F(NatsClientLiveTest, SubjectOverlapFailsProvisioningUntilConflictRemoved) 
 // ReconnectedCB) and the reconnect-triggered re-provisioning pass. Uses
 // stop+start rather than restart so the disconnected window is deterministic.
 TEST_F(NatsClientLiveTest, DisconnectReconnectCallbacksFire) {
-  require_compose_ctl();
+  if (!has_compose_ctl()) {
+    GTEST_SKIP() << "NESTOR_LIVE_NATS_COMPOSE not set — broker-bounce test skipped";
+  }
   NatsClient client(url_);
   ASSERT_TRUE(client.connect());
   const std::string subject = "hi.research.live.bounce-" + unique_suffix();
   ASSERT_TRUE(wait_provisioned(client, subject));
 
   {
-    BrokerRestoreGuard guard;
+    BrokerRestoreGuard guard(url_);
     ASSERT_TRUE(compose_ctl("stop"));
     EXPECT_TRUE(wait_for([&] { return !client.is_connected(); }, 15s))
         << "DisconnectedCB never fired after broker stop";
@@ -422,8 +533,10 @@ TEST_F(NatsClientLiveTest, DisconnectReconnectCallbacksFire) {
 // connect fails while the broker is down, then the background retry loop
 // connects once the broker returns.
 TEST_F(NatsClientLiveTest, ReconnectLoopConnectsWhenBrokerReturns) {
-  require_compose_ctl();
-  BrokerRestoreGuard guard;
+  if (!has_compose_ctl()) {
+    GTEST_SKIP() << "NESTOR_LIVE_NATS_COMPOSE not set — broker-bounce test skipped";
+  }
+  BrokerRestoreGuard guard(url_);
   ASSERT_TRUE(compose_ctl("stop"));
 
   NatsClient client(url_);
@@ -434,6 +547,28 @@ TEST_F(NatsClientLiveTest, ReconnectLoopConnectsWhenBrokerReturns) {
   EXPECT_TRUE(wait_for([&] { return client.is_connected(); }, 60s))
       << "background reconnect loop never connected after broker returned";
   client.close();
+}
+
+// A stopped broker leaves nats.c's internal reconnect loop active. close()
+// must finish without waiting for a reconnect or an optional ClosedCB.
+TEST_F(NatsClientLiveTest, CloseCompletesWhileBrokerIsStopped) {
+  if (!has_compose_ctl()) {
+    GTEST_SKIP() << "NESTOR_LIVE_NATS_COMPOSE not set — broker-bounce test skipped";
+  }
+  NatsClient client(url_);
+  ASSERT_TRUE(client.connect());
+  ASSERT_TRUE(wait_provisioned(client, "hi.research.live.stop-close-" + unique_suffix()));
+
+  BrokerRestoreGuard guard(url_);
+  ASSERT_TRUE(compose_ctl("stop"));
+  ASSERT_TRUE(wait_for([&] { return !client.is_connected(); }, 15s))
+      << "DisconnectedCB never fired after broker stop";
+
+  std::future<void> closed = std::async(std::launch::async, [&] { client.close(); });
+  ASSERT_EQ(closed.wait_for(5s), std::future_status::ready)
+      << "close waited for the stopped broker to reconnect";
+  EXPECT_NO_THROW(closed.get());
+  EXPECT_FALSE(client.is_connected());
 }
 
 }  // namespace
