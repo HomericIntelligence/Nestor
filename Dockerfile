@@ -8,7 +8,7 @@
 FROM ghcr.io/astral-sh/uv:0.12.9@sha256:8b940d3a9d65bed080436972241af2e21c84b5e8c9193f7014ed71479ee795ff AS uv
 
 # ── Builder ───────────────────────────────────────────────────────────────────
-FROM ubuntu@sha256:cd21a4f68a617580279d4b091cb18e3af9fa8a87500665f0ae5f7f757d17d367 AS builder
+FROM ubuntu@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78 AS builder
 # ubuntu:24.04 — pinned for reproducible builds (#60)
 
 # apt provides only the compiler + OpenSSL headers + git/ca-certificates. The
@@ -61,7 +61,7 @@ RUN uv run cmake -B build -G Ninja \
     && uv run cmake --build build --target Nestor_server
 
 # ── Runtime image ─────────────────────────────────────────────────────────────
-FROM ubuntu@sha256:cd21a4f68a617580279d4b091cb18e3af9fa8a87500665f0ae5f7f757d17d367
+FROM ubuntu@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
 # ubuntu:24.04 — pinned for reproducible builds (#60)
 
 # hadolint ignore=DL3008
