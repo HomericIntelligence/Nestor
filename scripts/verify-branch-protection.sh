@@ -62,6 +62,19 @@ EXPECTED_ALL="$(jq -c '[.required_checks[].context] | sort' "${POLICY}")"
 # rules that apply to the branch (from branch protection and/or rulesets).
 rules=$(gh api "repos/${REPO}/rules/branches/${BRANCH}")
 
+# Queue readiness must retain the complete live rule, including its resource
+# bounds. Normalize API provenance fields and object key order, not parameters.
+EXPECTED_QUEUE=$(jq -S -c '[.merge_queue_rule]' "${POLICY}")
+LIVE_QUEUE=$(jq -S -c '
+  [.[] | select(.type == "merge_queue") | {type, parameters}]
+' <<<"${rules}")
+if [ "${LIVE_QUEUE}" != "${EXPECTED_QUEUE}" ]; then
+  echo "ERROR: effective merge queue differs from ${POLICY}"
+  echo "expected: ${EXPECTED_QUEUE}"
+  echo "live:     ${LIVE_QUEUE}"
+  exit 1
+fi
+
 # Helper: extract the parameters object for a given rule type.
 params_for() {
   jq -c --arg t "$1" '[.[] | select(.type == $t)] | first | .parameters // empty' <<<"$rules"

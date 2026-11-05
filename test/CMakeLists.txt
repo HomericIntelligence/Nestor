@@ -17,6 +17,9 @@ add_executable(${PROJECT_NAME}_tests
   src/test_security_warnings.cpp
   src/test_server_tls.cpp
   src/test_sanitizers.cpp
+  src/test_fleet_intake.cpp
+  src/test_fleet_github.cpp
+  src/test_fleet_startup.cpp
 )
 
 target_compile_features(${PROJECT_NAME}_tests PRIVATE cxx_std_20)
@@ -30,7 +33,9 @@ target_include_directories(${PROJECT_NAME}_tests PRIVATE
 # source files (e.g. the auth-token-logging guard) can locate them
 # regardless of where the build or checkout lives.
 target_compile_definitions(${PROJECT_NAME}_tests
-  PRIVATE NESTOR_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+  PRIVATE NESTOR_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
+          NESTOR_TEST_SERVER="$<TARGET_FILE:Nestor_server>")
+add_dependencies(${PROJECT_NAME}_tests Nestor_server)
 
 target_link_libraries(${PROJECT_NAME}_tests
   PRIVATE

@@ -2,6 +2,7 @@
 
 #include "nestor/routes.hpp"
 
+#include "nestor/fleet_intake.hpp"
 #include "nestor/trace_context.hpp"
 
 #include <optional>
@@ -91,8 +92,8 @@ bool handle_research_status(Store& store, const std::string& subject, const std:
   return !updated.contains("error");
 }
 
-void register_routes(httplib::Server& server, Store& store, NatsClient& nats,
-                     RateLimiter& limiter) {
+void register_routes(httplib::Server& server, Store& store, NatsClient& nats, RateLimiter& limiter,
+                     FleetIntake* intake) {
   Store* sp = &store;      // NOLINT
   NatsClient* np = &nats;  // NOLINT
   // lp is captured by value (pointer) so that lambdas do not hold a dangling
@@ -135,6 +136,62 @@ void register_routes(httplib::Server& server, Store& store, NatsClient& nats,
   });
 
   // ── Research ─────────────────────────────────────────────────────────────
+
+  // Fleet bootstrap persists only intake metadata. It never submits to the
+  // legacy memory store or publishes an unreviewed task to the research queue.
+  auto intake_error = [](httplib::Response& res, int status, const std::string& code) {
+    res.status = status;
+    res.set_content(json{{"error", code}}.dump(), "application/json");
+  };
+  server.Post("/v1/research/intakes", [intake, throttle, intake_error](const httplib::Request& req,
+                                                                       httplib::Response& res) {
+    if (!throttle(req, res, RouteClass::Research)) {
+      return;
+    }
+    if (intake == nullptr) {
+      intake_error(res, 503, "fleet_intake_unavailable");
+      return;
+    }
+    const auto content_type = req.get_header_value("Content-Type");
+    if (content_type.substr(0, content_type.find(';')) != "application/json") {
+      intake_error(res, 415, "json_required");
+      return;
+    }
+    if (req.body.size() > 65536) {
+      intake_error(res, 413, "request_too_large");
+      return;
+    }
+    const auto body = json::parse(req.body, nullptr, false);
+    if (body.is_discarded()) {
+      intake_error(res, 400, "invalid_json");
+      return;
+    }
+    try {
+      res.set_content(intake->submit(body).dump(), "application/json");
+    } catch (const IntakeError& error) {
+      intake_error(res, error.status, error.what());
+    } catch (const std::exception&) {
+      // Do not expose issue text, credentials, or upstream response bodies.
+      intake_error(res, 503, "intake_processing_unconfirmed");
+    }
+  });
+  server.Get("/v1/research/intakes/:id",
+             [intake, throttle, intake_error](const httplib::Request& req, httplib::Response& res) {
+               if (!throttle(req, res, RouteClass::Default)) {
+                 return;
+               }
+               if (intake == nullptr) {
+                 intake_error(res, 503, "fleet_intake_unavailable");
+                 return;
+               }
+               try {
+                 res.set_content(intake->get(req.path_params.at("id")).dump(), "application/json");
+               } catch (const IntakeError& error) {
+                 intake_error(res, error.status, error.what());
+               } catch (const std::exception&) {
+                 intake_error(res, 503, "intake_processing_unconfirmed");
+               }
+             });
 
   server.Get("/v1/research/stats",
              [sp, throttle](const httplib::Request& req, httplib::Response& res) {

@@ -78,6 +78,8 @@ add_library(${PROJECT_NAME}_core STATIC
   src/rate_limiter.cpp
   src/tls_config.cpp
   src/security_warnings.cpp
+  src/fleet_intake.cpp
+  src/fleet_github.cpp
 )
 add_library(${PROJECT_NAME}::core ALIAS ${PROJECT_NAME}_core)
 
@@ -99,6 +101,7 @@ target_link_libraries(${PROJECT_NAME}_core PUBLIC
 )
 
 target_compile_features(${PROJECT_NAME}_core PUBLIC cxx_std_20)
+target_compile_definitions(${PROJECT_NAME}_core PUBLIC CPPHTTPLIB_OPENSSL_SUPPORT)
 set_target_properties(${PROJECT_NAME}_core PROPERTIES CXX_EXTENSIONS OFF)
 
 # Expose the NATS_CLIENT_TEST_HOOKS preprocessor gate in test builds so that
